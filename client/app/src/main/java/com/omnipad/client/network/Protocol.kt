@@ -27,15 +27,7 @@ data class Scroll(val delta: Int) : OmniPadMessage() {
 }
 
 data class TextInput(val text: String) : OmniPadMessage() {
-    override fun toJson(): String {
-        val escaped = text
-            .replace("\\", "\\\\")
-            .replace("\"", "\\\"")
-            .replace("\n", "\\n")
-            .replace("\r", "\\r")
-            .replace("\t", "\\t")
-        return """{"type":"text_input","text":"$escaped"}"""
-    }
+    override fun toJson() = """{"type":"text_input","text":${JSONObject.quote(text)}}"""
 }
 
 data class Keyboard(val key: String, val action: String) : OmniPadMessage() {
