@@ -88,7 +88,7 @@ fun ConnectScreen(
                 CircularProgressIndicator(
                     modifier = Modifier.size(20.dp),
                     strokeWidth = 2.dp,
-                    indicatorColor = MaterialTheme.colorScheme.onPrimary,
+                    color = MaterialTheme.colorScheme.onPrimary,
                 )
             } else {
                 Text("连接", style = MaterialTheme.typography.titleMedium)
