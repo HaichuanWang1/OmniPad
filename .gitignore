@@ -17,6 +17,7 @@ Thumbs.db
 # Android / Kotlin
 .gradle/
 build/
+!gradle/wrapper/gradle-wrapper.jar
 local.properties
 *.iml
 .idea/
