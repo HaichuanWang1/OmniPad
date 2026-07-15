@@ -13,6 +13,8 @@ class TcpServer:
         self.port = port
         self.server = None
         self.running = False
+        self._clients: list[socket.socket] = []
+        self._lock = threading.Lock()
 
     def start(self):
         self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -26,6 +28,8 @@ class TcpServer:
             try:
                 conn, addr = self.server.accept()
                 logger.info(f"client connected: {addr}")
+                with self._lock:
+                    self._clients.append(conn)
                 t = threading.Thread(target=self._handle_client, args=(conn, addr), daemon=True)
                 t.start()
             except OSError:
@@ -33,6 +37,13 @@ class TcpServer:
 
     def stop(self):
         self.running = False
+        with self._lock:
+            for conn in self._clients:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+            self._clients.clear()
         if self.server:
             self.server.close()
             logger.info("server stopped")
@@ -43,7 +54,10 @@ class TcpServer:
         buffer = ""
         try:
             while self.running:
-                data = conn.recv(4096)
+                try:
+                    data = conn.recv(4096)
+                except OSError:
+                    break
                 if not data:
                     break
                 buffer += data.decode("utf-8")
@@ -66,6 +80,9 @@ class TcpServer:
         except Exception as e:
             logger.error(f"client {addr} error: {e}")
         finally:
+            with self._lock:
+                if conn in self._clients:
+                    self._clients.remove(conn)
             try:
                 conn.close()
             except Exception:
