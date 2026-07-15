@@ -1,6 +1,34 @@
-# OmniPad
+# OmniPad v1.0.0-beta1
 
 在局域网下使用手机作为电脑的触控板/键盘。
+
+---
+
+## 快速使用
+
+### 电脑端（Windows）
+
+1. 从 Release 下载 `omnipad-server-v1.0.0-beta1.zip` 并解压
+2. 双击运行 `server_ui.exe`（或 `python server_ui.py`）
+3. 记下窗口顶部显示的 IP 地址（如 `192.168.x.x`）
+
+### 手机端（Android）
+
+1. 从 Release 下载 `OmniPad-v1.0.0-beta1.apk` 并安装
+2. 打开 App，输入电脑上显示的 IP 地址
+3. 点击"连接"
+
+### 使用
+
+| 操作 | 效果 |
+|---|---|
+| 触控板区域拖动 | 鼠标跟随移动 |
+| 点击触控板 | 鼠标左键单击 |
+| 长按触控板 | 鼠标右键单击 |
+| 文字输入框输入 + 发送 | 电脑端实时输入文字（支持中文） |
+| 点击功能键 | Enter / Tab / Esc 等 |
+
+---
 
 ## 架构
 
@@ -26,33 +54,6 @@
 | 滚动按钮 | 鼠标滚轮 |
 | 文字输入框 | Unicode 文字注入（支持中文） |
 | 功能键按钮 | Enter / Tab / Esc / Backspace / 方向键 / Ctrl+Shift+Alt |
-
-## 快速开始
-
-### 1. 启动服务端（Windows）
-
-```bash
-cd server
-python server.py
-# 或带 GUI 控制面板
-python server_ui.py
-```
-
-服务端会显示本机局域网 IP，记下供手机连接使用。
-
-### 2. 安装客户端（Android）
-
-从 Release 下载 APK 安装，或使用 Android Studio 构建：
-
-```bash
-cd client
-gradlew assembleDebug
-adb install app/build/outputs/apk/debug/app-debug.apk
-```
-
-### 3. 连接
-
-手机端输入服务端显示的 `IP:5800`，点击连接即可。
 
 ## 项目结构
 
