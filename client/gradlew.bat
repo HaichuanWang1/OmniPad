@@ -25,7 +25,7 @@ goto fail
 
 :execute
 set CLASSPATH=%APP_HOME%\gradle\wrapper\gradle-wrapper.jar
-"%JAVA_EXE%" -Dorg.gradle.user.home="%GRADLE_USER_HOME%" -classpath "%CLASSPATH%" org.gradle.wrapper.GradleWrapperMain %*
+"%JAVA_EXE%" -Dgradle.user.home="%GRADLE_USER_HOME%" -classpath "%CLASSPATH%" org.gradle.wrapper.GradleWrapperMain %*
 
 :fail
 exit /b 1
