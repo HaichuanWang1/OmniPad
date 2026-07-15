@@ -10,7 +10,7 @@ def handle_message(conn, msg):
     msg_type = msg.get("type")
     if msg_type not in HANDLER_REGISTRY:
         send_error(conn, "UNKNOWN_TYPE", f"unknown message type: {msg_type}")
-        return False
+        return True
 
     handler_fn = HANDLER_REGISTRY[msg_type]
     return handler_fn(conn, msg)

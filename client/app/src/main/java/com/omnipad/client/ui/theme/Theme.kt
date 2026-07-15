@@ -1,67 +1,83 @@
 package com.omnipad.client.ui.theme
 
-import android.os.Build
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalContext
-
-private val LightColorScheme = lightColorScheme(
-    primary = md_theme_light_primary,
-    onPrimary = md_theme_light_onPrimary,
-    primaryContainer = md_theme_light_primaryContainer,
-    onPrimaryContainer = md_theme_light_onPrimaryContainer,
-    secondary = md_theme_light_secondary,
-    onSecondary = md_theme_light_onSecondary,
-    secondaryContainer = md_theme_light_secondaryContainer,
-    onSecondaryContainer = md_theme_light_onSecondaryContainer,
-    background = md_theme_light_background,
-    onBackground = md_theme_light_onBackground,
-    surface = md_theme_light_surface,
-    onSurface = md_theme_light_onSurface,
-    error = md_theme_light_error,
-    onError = md_theme_light_onError,
-)
 
 private val DarkColorScheme = darkColorScheme(
-    primary = md_theme_dark_primary,
-    onPrimary = md_theme_dark_onPrimary,
-    primaryContainer = md_theme_dark_primaryContainer,
-    onPrimaryContainer = md_theme_dark_onPrimaryContainer,
-    secondary = md_theme_dark_secondary,
-    onSecondary = md_theme_dark_onSecondary,
-    secondaryContainer = md_theme_dark_secondaryContainer,
-    onSecondaryContainer = md_theme_dark_onSecondaryContainer,
-    background = md_theme_dark_background,
-    onBackground = md_theme_dark_onBackground,
-    surface = md_theme_dark_surface,
-    onSurface = md_theme_dark_onSurface,
-    error = md_theme_dark_error,
-    onError = md_theme_dark_onError,
+    primary = TechBlue,
+    onPrimary = OnTechBlue,
+    primaryContainer = TechBlueContainer,
+    onPrimaryContainer = OnTechBlueContainer,
+    secondary = SlateBlue,
+    onSecondary = OnSlateBlue,
+    secondaryContainer = SlateBlueContainer,
+    onSecondaryContainer = OnSlateBlueContainer,
+    tertiary = CyanAccent,
+    onTertiary = OnCyanAccent,
+    tertiaryContainer = CyanAccentContainer,
+    onTertiaryContainer = OnCyanAccentContainer,
+    error = RedError,
+    onError = OnRedError,
+    errorContainer = RedErrorContainer,
+    onErrorContainer = OnRedErrorContainer,
+    background = DarkBackground,
+    onBackground = OnDarkBackground,
+    surface = DarkSurface,
+    onSurface = OnDarkSurface,
+    surfaceVariant = DarkSurfaceVariant,
+    onSurfaceVariant = OnDarkSurfaceVariant,
+    outline = GrayOutline,
+    outlineVariant = GrayOutlineVariant,
+    inverseSurface = InverseSurface,
+    inverseOnSurface = InverseOnSurface,
+    inversePrimary = TechBlueDim,
+    scrim = Scrim,
+)
+
+private val LightColorScheme = lightColorScheme(
+    primary = TechBlueDim,
+    onPrimary = OnTechBlue,
+    primaryContainer = OnTechBlueContainer,
+    onPrimaryContainer = TechBlueContainer,
+    secondary = SlateBlueDim,
+    onSecondary = OnSlateBlue,
+    secondaryContainer = OnSlateBlueContainer,
+    onSecondaryContainer = SlateBlueContainer,
+    tertiary = CyanAccentDim,
+    onTertiary = OnCyanAccent,
+    tertiaryContainer = OnCyanAccentContainer,
+    onTertiaryContainer = CyanAccentContainer,
+    error = RedErrorDim,
+    onError = OnRedError,
+    errorContainer = OnRedErrorContainer,
+    onErrorContainer = RedErrorContainer,
+    background = LightBackground,
+    onBackground = OnLightBackground,
+    surface = LightSurface,
+    onSurface = OnLightSurface,
+    surfaceVariant = LightSurfaceVariant,
+    onSurfaceVariant = OnLightSurfaceVariant,
+    outline = LightOutline,
+    outlineVariant = LightOutlineVariant,
+    inverseSurface = LightInverseSurface,
+    inverseOnSurface = LightInverseOnSurface,
+    inversePrimary = TechBlue,
+    scrim = Scrim,
 )
 
 @Composable
 fun OmniPadTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
-    dynamicColor: Boolean = true,
-    content: @Composable () -> Unit
+    darkTheme: Boolean = true,
+    content: @Composable () -> Unit,
 ) {
-    val colorScheme = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            val context = LocalContext.current
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        }
-        darkTheme -> DarkColorScheme
-        else -> LightColorScheme
-    }
+    val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
 
     MaterialTheme(
         colorScheme = colorScheme,
-        typography = Typography,
+        typography = OmniPadTypography,
+        shapes = OmniPadShapes,
         content = content,
     )
 }

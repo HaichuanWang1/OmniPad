@@ -3,7 +3,7 @@ import socket
 import threading
 import logging
 
-from protocol import handle_message, send_json, send_error
+from protocol import handle_message, send_error
 
 logger = logging.getLogger("OmniPad")
 
@@ -38,6 +38,7 @@ class TcpServer:
             logger.info("server stopped")
 
     def _handle_client(self, conn, addr):
+        conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         conn.settimeout(30)
         buffer = ""
         try:
