@@ -1,0 +1,33 @@
+package com.omnipad.client.ui.theme
+
+import androidx.compose.ui.graphics.Color
+
+val md_theme_light_primary = Color(0xFF006B5E)
+val md_theme_light_onPrimary = Color(0xFFFFFFFF)
+val md_theme_light_primaryContainer = Color(0xFF71F7E2)
+val md_theme_light_onPrimaryContainer = Color(0xFF00201C)
+val md_theme_light_secondary = Color(0xFF4B635D)
+val md_theme_light_onSecondary = Color(0xFFFFFFFF)
+val md_theme_light_secondaryContainer = Color(0xFFCDE9E0)
+val md_theme_light_onSecondaryContainer = Color(0xFF06201B)
+val md_theme_light_background = Color(0xFFFBFDFB)
+val md_theme_light_onBackground = Color(0xFF191C1B)
+val md_theme_light_surface = Color(0xFFFBFDFB)
+val md_theme_light_onSurface = Color(0xFF191C1B)
+val md_theme_light_error = Color(0xFFBA1A1A)
+val md_theme_light_onError = Color(0xFFFFFFFF)
+
+val md_theme_dark_primary = Color(0xFF4EDBC6)
+val md_theme_dark_onPrimary = Color(0xFF003830)
+val md_theme_dark_primaryContainer = Color(0xFF005046)
+val md_theme_dark_onPrimaryContainer = Color(0xFF71F7E2)
+val md_theme_dark_secondary = Color(0xFFB2CCC4)
+val md_theme_dark_onSecondary = Color(0xFF1D352F)
+val md_theme_dark_secondaryContainer = Color(0xFF334B45)
+val md_theme_dark_onSecondaryContainer = Color(0xFFCDE9E0)
+val md_theme_dark_background = Color(0xFF191C1B)
+val md_theme_dark_onBackground = Color(0xFFE0E3E1)
+val md_theme_dark_surface = Color(0xFF191C1B)
+val md_theme_dark_onSurface = Color(0xFFE0E3E1)
+val md_theme_dark_error = Color(0xFFFFB4AB)
+val md_theme_dark_onError = Color(0xFF690005)
