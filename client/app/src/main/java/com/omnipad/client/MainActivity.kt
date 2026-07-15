@@ -5,18 +5,14 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.runtime.*
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.lifecycleScope
 import com.omnipad.client.network.ConnectionState
-import com.omnipad.client.network.MouseClick
-import com.omnipad.client.network.MouseMove
-import com.omnipad.client.network.Keyboard
 import com.omnipad.client.network.OmniPadConnection
-import com.omnipad.client.network.Scroll
-import com.omnipad.client.network.TextInput
 import com.omnipad.client.ui.screens.ConnectScreen
-import com.omnipad.client.ui.screens.ControlScreen
+import com.omnipad.client.ui.screens.TouchpadScreen
 import com.omnipad.client.ui.theme.OmniPadTheme
 
 class MainActivity : ComponentActivity() {
@@ -32,26 +28,9 @@ class MainActivity : ComponentActivity() {
                 val state by connection.connectionState.collectAsState()
 
                 if (state == ConnectionState.CONNECTED) {
-                    ControlScreen(
+                    TouchpadScreen(
                         onDisconnect = { connection.disconnect() },
-                        onMouseMove = { dx, dy ->
-                            connection.sendMessage(MouseMove(dx, dy))
-                        },
-                        onLeftClick = {
-                            connection.sendMessage(MouseClick("left", "click"))
-                        },
-                        onRightClick = {
-                            connection.sendMessage(MouseClick("right", "click"))
-                        },
-                        onScroll = { delta ->
-                            connection.sendMessage(Scroll(delta))
-                        },
-                        onTextInput = { text ->
-                            connection.sendMessage(TextInput(text))
-                        },
-                        onKeyboard = { key, action ->
-                            connection.sendMessage(Keyboard(key, action))
-                        },
+                        onSendMessage = { connection.sendMessage(it) },
                         modifier = Modifier.fillMaxSize(),
                     )
                 } else {

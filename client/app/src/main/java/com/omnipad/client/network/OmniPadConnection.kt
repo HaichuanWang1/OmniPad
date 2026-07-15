@@ -40,6 +40,7 @@ class OmniPadConnection(private val scope: CoroutineScope) {
         scope.launch(Dispatchers.IO) {
             try {
                 val sock = Socket()
+                sock.tcpNoDelay = true
                 sock.connect(InetSocketAddress(host, port), 5000)
                 sock.soTimeout = 30000
                 socket = sock
