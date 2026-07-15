@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://omnipad.dev/schema.json",
+  "title": "OmniPad Protocol",
+  "description": "JSON Schema for OmniPad TCP messages v1.0",
+  "oneOf": [
+    {
+      "$id": "#handshake",
+      "title": "Handshake Request",
+      "type": "object",
+      "required": ["type", "version"],
+      "properties": {
+        "type": { "const": "handshake" },
+        "version": { "type": "string", "pattern": "^\\d+\\.\\d+$" }
+      },
+      "additionalProperties": false
+    },
+    {
+      "$id": "#handshake_ack",
+      "title": "Handshake Acknowledgment",
+      "type": "object",
+      "required": ["type", "version"],
+      "properties": {
+        "type": { "const": "handshake_ack" },
+        "version": { "type": "string", "pattern": "^\\d+\\.\\d+$" }
+      },
+      "additionalProperties": false
+    },
+    {
+      "$id": "#mouse_move",
+      "title": "Mouse Relative Move",
+      "type": "object",
+      "required": ["type", "dx", "dy"],
+      "properties": {
+        "type": { "const": "mouse_move" },
+        "dx": { "type": "integer" },
+        "dy": { "type": "integer" }
+      },
+      "additionalProperties": false
+    },
+    {
+      "$id": "#mouse_click",
+      "title": "Mouse Click",
+      "type": "object",
+      "required": ["type", "button", "action"],
+      "properties": {
+        "type": { "const": "mouse_click" },
+        "button": { "enum": ["left", "right", "middle"] },
+        "action": { "enum": ["down", "up", "click"] }
+      },
+      "additionalProperties": false
+    },
+    {
+      "$id": "#scroll",
+      "title": "Mouse Scroll",
+      "type": "object",
+      "required": ["type", "delta"],
+      "properties": {
+        "type": { "const": "scroll" },
+        "delta": { "type": "integer" }
+      },
+      "additionalProperties": false
+    },
+    {
+      "$id": "#text_input",
+      "title": "Text Input",
+      "type": "object",
+      "required": ["type", "text"],
+      "properties": {
+        "type": { "const": "text_input" },
+        "text": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    {
+      "$id": "#keyboard",
+      "title": "Keyboard Special Key",
+      "type": "object",
+      "required": ["type", "key", "action"],
+      "properties": {
+        "type": { "const": "keyboard" },
+        "key": { "type": "string", "minLength": 1 },
+        "action": { "enum": ["down", "up", "press"] }
+      },
+      "additionalProperties": false
+    },
+    {
+      "$id": "#heartbeat",
+      "title": "Heartbeat",
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "const": "heartbeat" }
+      },
+      "additionalProperties": false
+    },
+    {
+      "$id": "#heartbeat_ack",
+      "title": "Heartbeat Acknowledgment",
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "const": "heartbeat_ack" }
+      },
+      "additionalProperties": false
+    },
+    {
+      "$id": "#error",
+      "title": "Error Response",
+      "type": "object",
+      "required": ["type", "code", "message"],
+      "properties": {
+        "type": { "const": "error" },
+        "code": { "type": "string" },
+        "message": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  ]
+}
