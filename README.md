@@ -107,4 +107,4 @@ Server → Client:  {"type":"handshake_ack","version":"1.0"}
 
 ## 许可证
 
-[MIT](LICENSE)
+[Apache 2.0](LICENSE)
