@@ -168,10 +168,10 @@ fun ConnectScreen(
                             AssistChip(
                                 onClick = {},
                                 label = { Text("${recent.host}:${recent.port}") },
-                                colors = AssistChipDefaults.assistChipColors(
-                                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                                    labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                ),
+                            colors = AssistChipDefaults.assistChipColors(
+                                containerColor = MaterialTheme.colorScheme.surface,
+                                labelColor = MaterialTheme.colorScheme.onSurface,
+                            ),
                                 shape = MaterialTheme.shapes.small,
                             )
                         }
