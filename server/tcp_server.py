@@ -8,8 +8,7 @@ from protocol import handle_message, send_error
 
 logger = logging.getLogger("OmniPad")
 
-# Per-connection heartbeat tracking: conn -> last heartbeat timestamp
-conn_heartbeat: dict[socket.socket, float] = {}
+IDLE_TIMEOUT = 15
 
 class TcpServer:
     def __init__(self, host="0.0.0.0", port=5800):
@@ -64,7 +63,7 @@ class TcpServer:
         conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         conn.settimeout(30)
         buffer = ""
-        conn_heartbeat[conn] = time.time()
+        last_message = time.time()
         try:
             while self.running:
                 try:
@@ -74,7 +73,6 @@ class TcpServer:
                 if not data:
                     break
 
-                # Decode with surrogateescape to avoid crash on split UTF-8
                 try:
                     decoded = data.decode("utf-8")
                 except UnicodeDecodeError:
@@ -95,10 +93,10 @@ class TcpServer:
                         continue
                     if not handle_message(conn, msg):
                         break
+                    last_message = time.time()
 
-                # Check heartbeat timeout (15s)
-                if time.time() - conn_heartbeat.get(conn, 0) > 15:
-                    logger.warning(f"client {addr} heartbeat timeout (15s)")
+                if time.time() - last_message > IDLE_TIMEOUT:
+                    logger.warning(f"client {addr} idle timeout ({IDLE_TIMEOUT}s)")
                     break
         except socket.timeout:
             logger.warning(f"client {addr} timed out")
@@ -107,7 +105,6 @@ class TcpServer:
         except Exception as e:
             logger.error(f"client {addr} error: {e}")
         finally:
-            conn_heartbeat.pop(conn, None)
             with self._lock:
                 if conn in self._clients:
                     self._clients.remove(conn)

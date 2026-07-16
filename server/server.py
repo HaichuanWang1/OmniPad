@@ -2,11 +2,10 @@ import argparse
 import logging
 import signal
 import sys
-import time
 
 from input_controller import move_mouse, click_mouse, scroll, send_text, press_key
 from protocol import handler, send_json, send_error
-from tcp_server import TcpServer, conn_heartbeat
+from tcp_server import TcpServer
 
 logging.basicConfig(
     level=logging.INFO,
@@ -32,7 +31,6 @@ def on_handshake(conn, msg):
 
 @handler("heartbeat")
 def on_heartbeat(conn, msg):
-    conn_heartbeat[conn] = time.time()
     send_json(conn, {"type": "heartbeat_ack"})
     return True
 
