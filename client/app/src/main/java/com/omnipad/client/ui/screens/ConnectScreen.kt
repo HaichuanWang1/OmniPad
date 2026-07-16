@@ -14,17 +14,17 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -159,20 +159,19 @@ fun ConnectScreen(
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     recentHosts.forEach { recent ->
-                        Box(
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.surface,
                             modifier = Modifier.combinedClickable(
                                 onClick = { connectOrFill(recent.host, recent.port) },
                                 onLongClick = { deleteTarget = recent },
                             ),
                         ) {
-                            AssistChip(
-                                onClick = {},
-                                label = { Text("${recent.host}:${recent.port}") },
-                            colors = AssistChipDefaults.assistChipColors(
-                                containerColor = MaterialTheme.colorScheme.surface,
-                                labelColor = MaterialTheme.colorScheme.onSurface,
-                            ),
-                                shape = MaterialTheme.shapes.small,
+                            Text(
+                                text = "${recent.host}:${recent.port}",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                             )
                         }
                     }
