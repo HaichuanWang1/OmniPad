@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
@@ -72,6 +73,16 @@ fun TouchpadScreen(
     val dragAccumX = remember { mutableIntStateOf(0) }
     val dragAccumY = remember { mutableIntStateOf(0) }
     val scrollAccum = remember { mutableIntStateOf(0) }
+    var activeModifiers by remember { mutableStateOf(setOf<String>()) }
+    var heldMouseButton by remember { mutableStateOf<String?>(null) }
+    val modifierOrder = listOf("ctrl", "shift", "alt", "win")
+
+    fun sendKeyWithModifiers(key: String, action: String) {
+        val sorted = modifierOrder.filter { it in activeModifiers }
+        sorted.forEach { onSendMessage(Keyboard(it, "down")) }
+        onSendMessage(Keyboard(key, action))
+        sorted.reversed().forEach { onSendMessage(Keyboard(it, "up")) }
+    }
 
     LaunchedEffect(Unit) {
         while (true) {
@@ -126,10 +137,38 @@ fun TouchpadScreen(
             ) {
                 ButtonGroup(
                     items = listOf(
-                            "左键" to { onSendMessage(MouseClick("left", "click")) },
-                            "右键" to { onSendMessage(MouseClick("right", "click")) },
-                            "中键" to { onSendMessage(MouseClick("middle", "click")) },
+                        "左键" to {
+                            val held = heldMouseButton
+                            if (held == "left") {
+                                heldMouseButton = null
+                                onSendMessage(MouseClick("left", "up"))
+                            } else {
+                                heldMouseButton = "left"
+                                onSendMessage(MouseClick("left", "down"))
+                            }
+                        },
+                        "右键" to {
+                            val held = heldMouseButton
+                            if (held == "right") {
+                                heldMouseButton = null
+                                onSendMessage(MouseClick("right", "up"))
+                            } else {
+                                heldMouseButton = "right"
+                                onSendMessage(MouseClick("right", "down"))
+                            }
+                        },
+                        "中键" to {
+                            val held = heldMouseButton
+                            if (held == "middle") {
+                                heldMouseButton = null
+                                onSendMessage(MouseClick("middle", "up"))
+                            } else {
+                                heldMouseButton = "middle"
+                                onSendMessage(MouseClick("middle", "down"))
+                            }
+                        },
                     ),
+                    heldKey = heldMouseButton,
                     modifier = Modifier.weight(1f),
                 )
 
@@ -137,8 +176,8 @@ fun TouchpadScreen(
 
                 ButtonGroup(
                     items = listOf(
-                            "△" to { onSendMessage(Scroll(1)) },
-                            "▽" to { onSendMessage(Scroll(-1)) },
+                        "△" to { onSendMessage(Scroll(1)) },
+                        "▽" to { onSendMessage(Scroll(-1)) },
                     ),
                     modifier = Modifier.width(120.dp),
                 )
@@ -199,7 +238,7 @@ fun TouchpadScreen(
                         else -> label.lowercase()
                     }
                     FilledIconButton(
-                        onClick = { onSendMessage(Keyboard(key, "press")) },
+                        onClick = { sendKeyWithModifiers(key, "press") },
                         modifier = Modifier.weight(1f).height(48.dp),
                         shape = MaterialTheme.shapes.small,
                         colors = IconButtonDefaults.filledIconButtonColors(
@@ -216,17 +255,34 @@ fun TouchpadScreen(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                listOf("Ctrl", "Shift", "Alt", "Win").forEach { key ->
+                listOf("Ctrl", "Shift", "Alt", "Win").forEach { label ->
+                    val key = label.lowercase()
+                    val isActive = key in activeModifiers
                     FilledIconButton(
-                        onClick = { onSendMessage(Keyboard(key.lowercase(), "press")) },
+                        onClick = {
+                            if (isActive) {
+                                activeModifiers = activeModifiers - key
+                                onSendMessage(Keyboard(key, "up"))
+                            } else {
+                                activeModifiers = activeModifiers + key
+                                onSendMessage(Keyboard(key, "down"))
+                            }
+                        },
                         modifier = Modifier.weight(1f).height(48.dp),
                         shape = MaterialTheme.shapes.small,
-                        colors = IconButtonDefaults.filledIconButtonColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        ),
+                        colors = if (isActive) {
+                            IconButtonDefaults.filledIconButtonColors(
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary,
+                            )
+                        } else {
+                            IconButtonDefaults.filledIconButtonColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        },
                     ) {
-                        Text(key, style = MaterialTheme.typography.labelLarge)
+                        Text(label, style = MaterialTheme.typography.labelLarge)
                     }
                 }
             }
@@ -241,7 +297,7 @@ fun TouchpadScreen(
                         else -> label.lowercase()
                     }
                     FilledIconButton(
-                        onClick = { onSendMessage(Keyboard(key, "press")) },
+                        onClick = { sendKeyWithModifiers(key, "press") },
                         modifier = Modifier.weight(1f).height(48.dp),
                         shape = MaterialTheme.shapes.small,
                         colors = IconButtonDefaults.filledIconButtonColors(
@@ -278,8 +334,8 @@ fun TouchpadScreen(
                     .pointerInput(Unit) {
                         detectTapGestures(
                             onTap = {
-                            onSendMessage(MouseClick("left", "click"))
-                        },
+                                onSendMessage(MouseClick("left", "click"))
+                            },
                             onLongPress = {
                                 onSendMessage(MouseClick("right", "click"))
                             },
@@ -350,6 +406,7 @@ fun TouchpadScreen(
 private fun ButtonGroup(
     items: List<Pair<String, () -> Unit>>,
     modifier: Modifier = Modifier,
+    heldKey: String? = null,
 ) {
     Row(
         modifier = modifier,
@@ -357,12 +414,26 @@ private fun ButtonGroup(
     ) {
         items.forEach { (label, onClick) ->
             val circle = items.size <= 3
+            val isHeld = label == "左键" && heldKey == "left" ||
+                    label == "右键" && heldKey == "right" ||
+                    label == "中键" && heldKey == "middle"
             FilledIconButton(
                 onClick = onClick,
                 modifier = Modifier.weight(1f).height(48.dp),
                 shape = if (circle) CircleShape else MaterialTheme.shapes.small,
+                colors = if (isHeld) {
+                    IconButtonDefaults.filledIconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                    )
+                } else {
+                    IconButtonDefaults.filledIconButtonColors()
+                },
             ) {
-                Text(label, style = MaterialTheme.typography.labelLarge)
+                Text(
+                    label,
+                    style = MaterialTheme.typography.labelLarge,
+                )
             }
         }
     }
