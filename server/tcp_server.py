@@ -40,11 +40,19 @@ class TcpServer:
         with self._lock:
             for conn in self._clients:
                 try:
+                    conn.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+                try:
                     conn.close()
-                except Exception:
+                except OSError:
                     pass
             self._clients.clear()
         if self.server:
+            try:
+                self.server.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
             self.server.close()
             logger.info("server stopped")
 
