@@ -123,7 +123,6 @@ class ServerUI:
             title_frame, font=("Consolas", 10, "bold"), fg=PRIMARY, bg=BG, anchor="w",
         )
         self.connect_info.pack(anchor="w", pady=(4, 0))
-        self._update_connect_info()
 
         control_frame = tk.Frame(header, bg=BG)
         control_frame.pack(side=tk.RIGHT)
@@ -147,6 +146,7 @@ class ServerUI:
         self.port_entry.insert(0, "5800")
         self.port_entry.pack(side=tk.LEFT)
         self.port_entry.bind("<KeyRelease>", lambda _: self._update_connect_info())
+        self._update_connect_info()
 
         self.toggle_btn = tk.Button(
             control_frame, text="启动", font=("Segoe UI", 10, "bold"),
