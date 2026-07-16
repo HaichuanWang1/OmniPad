@@ -4,6 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -12,6 +14,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -33,10 +37,13 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.omnipad.client.network.ConnectionState
+import com.omnipad.client.network.RecentHost
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ConnectScreen(
     connectionState: ConnectionState,
+    recentHosts: List<RecentHost>,
     onConnect: (host: String, port: Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -123,6 +130,39 @@ fun ConnectScreen(
                 shape = MaterialTheme.shapes.medium,
                 modifier = Modifier.fillMaxWidth(),
             )
+
+            if (recentHosts.isNotEmpty()) {
+                Spacer(Modifier.height(20.dp))
+                Text(
+                    text = "历史连接",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(8.dp))
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    recentHosts.forEach { recent ->
+                        AssistChip(
+                            onClick = {
+                                focusManager.clearFocus()
+                                host = recent.host
+                                port = recent.port.toString()
+                                onConnect(recent.host, recent.port)
+                            },
+                            label = { Text("${recent.host}:${recent.port}") },
+                            colors = AssistChipDefaults.assistChipColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            ),
+                            shape = MaterialTheme.shapes.small,
+                        )
+                    }
+                }
+            }
 
             Spacer(Modifier.height(24.dp))
 
