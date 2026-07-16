@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.0.0-beta1.2 (2026-07-16)
+
+### 新功能
+- 触控板双指滚动手势
+- 服务端端口输入实时更新连接信息
+
+### 修复
+- 历史记录点击无反应（AssistChip 消费事件，改用 Surface + combinedClickable）
+- 连接失败后状态卡 FAILED，无法重新连接
+- 点击连接时立即保存历史记录，不再依赖异步 onConnected 回调
+- 服务端 Windows 上 stop() 先 shutdown 再 close 确保线程退出
+- 服务端闪退（Frame padx/pady 参数位置错误、port_entry 初始化时序）
+- 'BS' 按钮改为中文 '退格'
+
 ## v1.0.0-beta1.1 (2026-07-16)
 
 ### 新功能
