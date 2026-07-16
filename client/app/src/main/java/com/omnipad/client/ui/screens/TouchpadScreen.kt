@@ -184,9 +184,9 @@ fun TouchpadScreen(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                listOf("Enter", "Tab", "Esc", "BS").forEach { label ->
+                listOf("Enter", "Tab", "Esc", "退格").forEach { label ->
                     val key = when (label) {
-                        "BS" -> "backspace"
+                        "退格" -> "backspace"
                         "Esc" -> "escape"
                         else -> label.lowercase()
                     }
