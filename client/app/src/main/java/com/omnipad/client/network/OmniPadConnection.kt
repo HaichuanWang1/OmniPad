@@ -33,7 +33,7 @@ class OmniPadConnection(private val scope: CoroutineScope) {
     }
 
     fun connect(host: String, port: Int, onConnected: () -> Unit = {}, onFailed: (String) -> Unit = {}) {
-        if (_connectionState.value != ConnectionState.DISCONNECTED) return
+        if (_connectionState.value != ConnectionState.DISCONNECTED && _connectionState.value != ConnectionState.FAILED) return
 
         _connectionState.value = ConnectionState.CONNECTING
 
