@@ -4,7 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -297,10 +298,29 @@ fun TouchpadScreen(
                         )
                     }
                     .pointerInput(Unit) {
-                        detectTransformGestures { _, pan, _, _ ->
-                            val delta = -pan.y.toInt()
-                            if (delta != 0) {
-                                scrollAccum.intValue += delta
+                        awaitEachGesture {
+                            val first = awaitFirstDown(requireUnconsumed = false)
+                            val secondFinger: Any? = withTimeoutOrNull(80) {
+                                var event = awaitPointerEvent()
+                                while (event.changes.count { it.pressed } < 2) {
+                                    event = awaitPointerEvent()
+                                }
+                                true
+                            }
+                            if (secondFinger != null) {
+                                var lastY = first.position.y
+                                while (true) {
+                                    val event = awaitPointerEvent()
+                                    val pressed = event.changes.filter { it.pressed }
+                                    if (pressed.size < 2) break
+                                    val avgY = pressed.map { it.position.y }.average().toFloat()
+                                    val delta = ((lastY - avgY) / 3).toInt()
+                                    if (delta != 0) {
+                                        scrollAccum.intValue += delta
+                                    }
+                                    lastY = avgY
+                                    pressed.forEach { it.consume() }
+                                }
                             }
                         }
                     },
