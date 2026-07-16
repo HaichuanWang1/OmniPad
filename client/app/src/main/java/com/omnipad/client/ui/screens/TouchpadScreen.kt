@@ -23,7 +23,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Send
-import kotlinx.coroutines.withTimeoutOrNull
+
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
@@ -348,79 +348,74 @@ fun TouchpadScreen(
                             isPressed = true
                             var lastPos = first.position
                             val startPos = first.position
+                            val startTime = System.nanoTime()
 
-                            val isMultiTouch = withTimeoutOrNull(80L) {
-                                var event = awaitPointerEvent(PointerEventPass.Main)
-                                while (event.changes.count { it.pressed } < 2) {
-                                    val c = event.changes.firstOrNull { it.id == first.id }
-                                    if (c != null) {
-                                        lastPos = c.position
-                                        c.consume()
-                                    }
-                                    event = awaitPointerEvent(PointerEventPass.Main)
+                            var isScrolling = false
+                            var hasMovedPastSlop = false
+                            var actionSent = false
+
+                            while (true) {
+                                val event = awaitPointerEvent(PointerEventPass.Main)
+                                val my = event.changes.firstOrNull { it.id == first.id }
+                                val pressedCount = event.changes.count { it.pressed }
+
+                                if (pressedCount == 0) break
+
+                                if (!isScrolling && pressedCount >= 2) {
+                                    isScrolling = true
+                                    scrollAccum.set(0)
+                                    lastPos = first.position
                                 }
-                                true
-                            }
 
-                            if (isMultiTouch != null) {
-                                var lastY = lastPos.y
-                                while (true) {
-                                    val event = awaitPointerEvent()
+                                if (isScrolling) {
                                     val pressed = event.changes.filter { it.pressed }
                                     if (pressed.size < 2) break
                                     val avgY = pressed.map { it.position.y }.average().toFloat()
-                                    val delta = ((lastY - avgY) / 3).toInt()
+                                    val delta = ((lastPos.y - avgY) / 3).toInt()
                                     if (delta != 0) {
                                         scrollAccum.addAndGet(delta)
                                     }
-                                    lastY = avgY
+                                    lastPos = first.position.copy(y = avgY)
                                     pressed.forEach { it.consume() }
+                                    continue
                                 }
-                            } else {
-                                var hasMoved = false
-                                val slopPx = 8f
-                                val longPressMs = 400L
-                                val startTime = System.nanoTime()
 
-                                while (true) {
-                                    val event = awaitPointerEvent(PointerEventPass.Main)
-                                    val change = event.changes.firstOrNull { it.id == first.id }
-                                    if (change == null || !change.pressed) break
+                                if (my == null || !my.pressed) break
 
-                                    val totalDx = change.position.x - startPos.x
-                                    val totalDy = change.position.y - startPos.y
-                                    val dist = sqrt(totalDx * totalDx + totalDy * totalDy)
-                                    val dx = change.position.x - lastPos.x
-                                    val dy = change.position.y - lastPos.y
+                                val dx = my.position.x - lastPos.x
+                                val dy = my.position.y - lastPos.y
+                                val totalDx = my.position.x - startPos.x
+                                val totalDy = my.position.y - startPos.y
+                                val dist = sqrt(totalDx * totalDx + totalDy * totalDy)
 
-                                    if (!hasMoved && dist > slopPx) {
-                                        hasMoved = true
-                                    }
+                                if (!hasMovedPastSlop && dist > 8f) {
+                                    hasMovedPastSlop = true
+                                }
 
-                                    if (hasMoved) {
-                                        dragAccumX.addAndGet(dx.toInt())
-                                        dragAccumY.addAndGet(dy.toInt())
-                                        lastPos = change.position
-                                    } else {
-                                        val elapsed = (System.nanoTime() - startTime) / 1_000_000L
-                                        if (elapsed > longPressMs) {
-                                            onSendMessage(MouseClick("right", "click"))
-                                            while (true) {
-                                                val up = awaitPointerEvent()
-                                                val uc = up.changes.firstOrNull { it.id == first.id }
-                                                if (uc == null || !uc.pressed) break
-                                                uc.consume()
-                                            }
-                                            break
+                                dragAccumX.addAndGet(dx.toInt())
+                                dragAccumY.addAndGet(dy.toInt())
+                                lastPos = my.position
+
+                                if (!hasMovedPastSlop) {
+                                    val elapsed = (System.nanoTime() - startTime) / 1_000_000L
+                                    if (elapsed > 400L) {
+                                        onSendMessage(MouseClick("right", "click"))
+                                        actionSent = true
+                                        while (true) {
+                                            val up = awaitPointerEvent()
+                                            val uc = up.changes.firstOrNull { it.id == first.id }
+                                            if (uc == null || !uc.pressed) break
+                                            uc.consume()
                                         }
+                                        break
                                     }
-
-                                    change.consume()
                                 }
 
-                                if (!hasMoved) {
-                                    onSendMessage(MouseClick("left", "click"))
-                                }
+                                my.consume()
+                            }
+
+                            if (!actionSent && !hasMovedPastSlop) {
+                                onSendMessage(MouseClick("left", "click"))
                             }
 
                             isPressed = false
