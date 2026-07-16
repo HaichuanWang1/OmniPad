@@ -45,4 +45,10 @@ class RecentHostsStore(context: Context) {
         list.add(0, RecentHost(host, port, System.currentTimeMillis()))
         saveAll(list.take(10))
     }
+
+    fun remove(host: String, port: Int) {
+        val list = loadAll().toMutableList()
+        list.removeAll { it.host == host && it.port == port }
+        saveAll(list)
+    }
 }

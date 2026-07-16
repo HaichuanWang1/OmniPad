@@ -1,6 +1,8 @@
 package com.omnipad.client.ui.screens
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
@@ -23,6 +26,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -39,17 +43,26 @@ import androidx.compose.ui.unit.dp
 import com.omnipad.client.network.ConnectionState
 import com.omnipad.client.network.RecentHost
 
-@OptIn(ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
 fun ConnectScreen(
     connectionState: ConnectionState,
     recentHosts: List<RecentHost>,
     onConnect: (host: String, port: Int) -> Unit,
+    onDeleteHost: (host: String, port: Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var host by remember { mutableStateOf("") }
     var port by remember { mutableStateOf("") }
     val focusManager = LocalFocusManager.current
+    var deleteTarget by remember { mutableStateOf<RecentHost?>(null) }
+
+    fun connectOrFill(h: String, p: Int) {
+        focusManager.clearFocus()
+        host = h
+        port = p.toString()
+        onConnect(h, p)
+    }
 
     val fieldColors = OutlinedTextFieldDefaults.colors(
         focusedBorderColor = MaterialTheme.colorScheme.primary,
@@ -146,20 +159,22 @@ fun ConnectScreen(
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     recentHosts.forEach { recent ->
-                        AssistChip(
-                            onClick = {
-                                focusManager.clearFocus()
-                                host = recent.host
-                                port = recent.port.toString()
-                                onConnect(recent.host, recent.port)
-                            },
-                            label = { Text("${recent.host}:${recent.port}") },
-                            colors = AssistChipDefaults.assistChipColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                                labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        Box(
+                            modifier = Modifier.combinedClickable(
+                                onClick = { connectOrFill(recent.host, recent.port) },
+                                onLongClick = { deleteTarget = recent },
                             ),
-                            shape = MaterialTheme.shapes.small,
-                        )
+                        ) {
+                            AssistChip(
+                                onClick = {},
+                                label = { Text("${recent.host}:${recent.port}") },
+                                colors = AssistChipDefaults.assistChipColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                    labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                ),
+                                shape = MaterialTheme.shapes.small,
+                            )
+                        }
                     }
                 }
             }
@@ -202,5 +217,26 @@ fun ConnectScreen(
                 )
             }
         }
+    }
+
+    if (deleteTarget != null) {
+        AlertDialog(
+            onDismissRequest = { deleteTarget = null },
+            title = { Text("删除记录") },
+            text = { Text("确定要删除 ${deleteTarget!!.host}:${deleteTarget!!.port} 吗？") },
+            confirmButton = {
+                TextButton(onClick = {
+                    onDeleteHost(deleteTarget!!.host, deleteTarget!!.port)
+                    deleteTarget = null
+                }) {
+                    Text("删除", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteTarget = null }) {
+                    Text("取消")
+                }
+            },
+        )
     }
 }
