@@ -45,10 +45,9 @@ class MainActivity : ComponentActivity() {
                         connectionState = state,
                         recentHosts = recentHosts,
                         onConnect = { host, port ->
-                            connection.connect(host, port) {
-                                hostsStore.add(host, port)
-                                recentHosts = hostsStore.get()
-                            }
+                            hostsStore.add(host, port)
+                            recentHosts = hostsStore.get()
+                            connection.connect(host, port)
                         },
                         onDeleteHost = { host, port ->
                             hostsStore.remove(host, port)
