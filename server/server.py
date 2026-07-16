@@ -2,10 +2,11 @@ import argparse
 import logging
 import signal
 import sys
+import time
 
 from input_controller import move_mouse, click_mouse, scroll, send_text, press_key
 from protocol import handler, send_json, send_error
-from tcp_server import TcpServer
+from tcp_server import TcpServer, conn_heartbeat
 
 logging.basicConfig(
     level=logging.INFO,
@@ -13,6 +14,11 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 logger = logging.getLogger("OmniPad")
+
+def _send_or_fail(conn, ok, msg="input action failed"):
+    if not ok:
+        send_error(conn, "ACTION_FAILED", msg)
+    return ok
 
 @handler("handshake")
 def on_handshake(conn, msg):
@@ -26,6 +32,7 @@ def on_handshake(conn, msg):
 
 @handler("heartbeat")
 def on_heartbeat(conn, msg):
+    conn_heartbeat[conn] = time.time()
     send_json(conn, {"type": "heartbeat_ack"})
     return True
 
@@ -44,10 +51,14 @@ def on_mouse_click(conn, msg):
         send_error(conn, "INVALID_PARAMS", "invalid button or action")
         return True
     if action == "click":
-        click_mouse(button, "down")
-        click_mouse(button, "up")
+        ok1 = click_mouse(button, "down")
+        ok2 = click_mouse(button, "up")
+        if not ok1 or not ok2:
+            send_error(conn, "ACTION_FAILED", f"mouse {button} click failed")
     else:
-        click_mouse(button, action)
+        ok = click_mouse(button, action)
+        if not ok:
+            send_error(conn, "ACTION_FAILED", f"mouse {button} {action} failed")
     return True
 
 @handler("scroll")
@@ -62,7 +73,8 @@ def on_text_input(conn, msg):
     if not text:
         send_error(conn, "INVALID_PARAMS", "text is empty")
         return True
-    send_text(text)
+    if not send_text(text):
+        send_error(conn, "ACTION_FAILED", "text input failed")
     return True
 
 @handler("keyboard")

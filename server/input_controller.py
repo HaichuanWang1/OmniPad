@@ -65,11 +65,12 @@ class INPUT(ctypes.Structure):
 
 def _send_input(inputs):
     inp_array = (INPUT * len(inputs))(*inputs)
-    ctypes.windll.user32.SendInput(
+    result = ctypes.windll.user32.SendInput(
         ctypes.c_uint(len(inputs)),
         inp_array,
         ctypes.sizeof(INPUT),
     )
+    return result == len(inputs)
 
 def move_mouse(dx, dy):
     inp = INPUT()
@@ -96,8 +97,7 @@ def click_mouse(button, action):
     inp.type = INPUT_MOUSE
     inp.union.mi.dwFlags = flags
     inp.union.mi.time = 0
-    _send_input([inp])
-    return True
+    return _send_input([inp])
 
 def scroll(delta):
     inp = INPUT()
@@ -107,34 +107,45 @@ def scroll(delta):
     inp.union.mi.time = 0
     _send_input([inp])
 
+def _unicode_input_pair(code):
+    ki_down = KEYBDINPUT()
+    ki_down.wVk = 0
+    ki_down.wScan = code
+    ki_down.dwFlags = KEYEVENTF_UNICODE
+    ki_down.time = 0
+
+    ki_up = KEYBDINPUT()
+    ki_up.wVk = 0
+    ki_up.wScan = code
+    ki_up.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP
+    ki_up.time = 0
+
+    inp_down = INPUT()
+    inp_down.type = INPUT_KEYBOARD
+    inp_down.union.ki = ki_down
+
+    inp_up = INPUT()
+    inp_up.type = INPUT_KEYBOARD
+    inp_up.union.ki = ki_up
+
+    return [inp_down, inp_up]
+
 def send_text(text):
     inputs = []
     for ch in text:
-        ki_down = KEYBDINPUT()
-        ki_down.wVk = 0
-        ki_down.wScan = ord(ch)
-        ki_down.dwFlags = KEYEVENTF_UNICODE
-        ki_down.time = 0
-
-        ki_up = KEYBDINPUT()
-        ki_up.wVk = 0
-        ki_up.wScan = ord(ch)
-        ki_up.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP
-        ki_up.time = 0
-
-        inp_down = INPUT()
-        inp_down.type = INPUT_KEYBOARD
-        inp_down.union.ki = ki_down
-
-        inp_up = INPUT()
-        inp_up.type = INPUT_KEYBOARD
-        inp_up.union.ki = ki_up
-
-        inputs.append(inp_down)
-        inputs.append(inp_up)
+        code = ord(ch)
+        if code < 0x10000:
+            inputs.extend(_unicode_input_pair(code))
+        else:
+            code -= 0x10000
+            high = 0xD800 + (code >> 10)
+            low = 0xDC00 + (code & 0x3FF)
+            inputs.extend(_unicode_input_pair(high))
+            inputs.extend(_unicode_input_pair(low))
 
     if inputs:
-        _send_input(inputs)
+        return _send_input(inputs)
+    return True
 
 def press_key(key_name, action):
     vk = VK_MAP.get(key_name.lower())
@@ -171,5 +182,5 @@ def press_key(key_name, action):
         inputs.append(inp)
 
     if inputs:
-        _send_input(inputs)
+        return _send_input(inputs)
     return True

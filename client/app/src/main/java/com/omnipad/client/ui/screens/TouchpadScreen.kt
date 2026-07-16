@@ -97,7 +97,7 @@ fun TouchpadScreen(
             val sc = scrollAccum.intValue
             if (sc != 0) {
                 scrollAccum.intValue = 0
-                onSendMessage(Scroll(if (sc > 0) 1 else -1))
+                onSendMessage(Scroll(sc))
             }
         }
     }
