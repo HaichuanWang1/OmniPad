@@ -48,18 +48,32 @@ class QueueHandler(logging.Handler):
         log_queue.put(record)
 
 
+class ClientInfo:
+    def __init__(self, addr):
+        self.addr = addr
+        self.connected_at = datetime.now()
+        self.status = "connected"
+        self.disconnected_at = None
+
+
 class TcpServer(BaseTcpServer):
     def __init__(self, host="0.0.0.0", port=5800, on_change=None):
         super().__init__(host, port)
-        self.client_count = 0
         self.on_change = on_change
+        self._clients_info: dict[str, ClientInfo] = {}
 
     def _handle_client(self, conn, addr):
-        self.client_count += 1
+        addr_str = f"{addr[0]}:{addr[1]}"
+        info = ClientInfo(addr)
+        self._clients_info[addr_str] = info
         self._notify()
         super()._handle_client(conn, addr)
-        self.client_count -= 1
+        info.status = "disconnected"
+        info.disconnected_at = datetime.now()
         self._notify()
+
+    def get_clients(self) -> list[ClientInfo]:
+        return list(self._clients_info.values())
 
     def _notify(self):
         if self.on_change:
@@ -145,6 +159,32 @@ class ServerUI:
         sep = tk.Frame(self.root, height=1, bg=SURFACE_VARIANT)
         sep.pack(fill=tk.X)
 
+        client_container = tk.Frame(self.root, bg=BG, padx=16, pady=(8, 0))
+        client_container.pack(fill=tk.X)
+
+        tk.Label(
+            client_container, text="已连接客户端", font=("Segoe UI", 9, "bold"),
+            fg=TEXT, bg=BG, anchor="w",
+        ).pack(anchor="w")
+
+        self.client_tree = ttk.Treeview(
+            client_container,
+            columns=("addr", "connected", "status"),
+            show="headings",
+            height=4,
+            style="Client.Treeview",
+        )
+        self.client_tree.heading("addr", text="地址")
+        self.client_tree.heading("connected", text="连接时间")
+        self.client_tree.heading("status", text="状态")
+        self.client_tree.column("addr", width=200)
+        self.client_tree.column("connected", width=150)
+        self.client_tree.column("status", width=80, anchor="center")
+        self.client_tree.pack(fill=tk.X, pady=(4, 0))
+
+        sep2 = tk.Frame(self.root, height=1, bg=SURFACE_VARIANT)
+        sep2.pack(fill=tk.X, pady=(8, 0))
+
         log_container = tk.Frame(self.root, bg=BG)
         log_container.pack(fill=tk.BOTH, expand=True, padx=16, pady=(8, 4))
 
@@ -161,21 +201,16 @@ class ServerUI:
         scrollbar.config(command=self.log_text.yview)
 
         self._apply_text_tags()
+        self._apply_tree_style()
 
         status_bar = tk.Frame(self.root, bg=SURFACE, padx=16, pady=6)
         status_bar.pack(fill=tk.X, side=tk.BOTTOM)
 
-        self.client_label = tk.Label(
-            status_bar, text="客户端: 0", font=("Segoe UI", 9),
-            fg=TEXT_DIM, bg=SURFACE, anchor="w",
-        )
-        self.client_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
-
         self.uptime_label = tk.Label(
             status_bar, text="运行时间: --", font=("Segoe UI", 9),
-            fg=TEXT_DIM, bg=SURFACE, anchor="e",
+            fg=TEXT_DIM, bg=SURFACE, anchor="w",
         )
-        self.uptime_label.pack(side=tk.RIGHT)
+        self.uptime_label.pack(side=tk.LEFT)
 
     def _apply_text_tags(self):
         for level, color in COLORS.items():
@@ -183,6 +218,14 @@ class ServerUI:
         self.log_text.tag_config("bold", font=("Consolas", 10, "bold"))
         self.log_text.tag_config("dim", foreground=TEXT_DIM)
         self.log_text.tag_config("highlight", background="#2A2D36")
+
+    def _apply_tree_style(self):
+        style = ttk.Style()
+        style.theme_use("default")
+        style.configure("Client.Treeview", background=SURFACE, foreground=TEXT, fieldbackground=SURFACE, borderwidth=0)
+        style.configure("Client.Treeview.Heading", background=SURFACE_VARIANT, foreground=TEXT, relief=tk.FLAT, font=("Segoe UI", 9, "bold"))
+        style.map("Client.Treeview", background=[("selected", SURFACE_VARIANT)], foreground=[("selected", TEXT)])
+        style.layout("Client.Treeview", [("Client.Treeview.treearea", {"sticky": "nswe"})])
 
     def _toggle_server(self):
         if self.running:
@@ -200,7 +243,7 @@ class ServerUI:
             return
 
         def on_change():
-            self.root.after(0, self._update_client_count)
+            self.root.after(0, self._update_clients)
 
         self.server = TcpServer(host=host, port=port, on_change=on_change)
         self.server_thread = threading.Thread(target=self._run_server, daemon=True)
@@ -234,16 +277,30 @@ class ServerUI:
         self.running = False
 
         self._update_status(RED, "已停止")
-        self._update_client_count()
+        self._update_clients()
         self.uptime_label.config(text="运行时间: --")
 
     def _update_status(self, color, text):
         self.status_dot.itemconfig(self.status_indicator, fill=color)
         self.status_label.config(text=text)
 
-    def _update_client_count(self):
-        count = self.server.client_count if self.server else 0
-        self.client_label.config(text=f"客户端: {count}")
+    def _update_clients(self):
+        for row in self.client_tree.get_children():
+            self.client_tree.delete(row)
+        if not self.server:
+            return
+        for info in self.server.get_clients():
+            if info.status == "connected":
+                ts = info.connected_at.strftime("%H:%M:%S")
+                tag = "online"
+                status_text = "在线"
+            else:
+                ts = info.disconnected_at.strftime("%H:%M:%S") if info.disconnected_at else "--:--:--"
+                tag = "offline"
+                status_text = "离线"
+            self.client_tree.insert("", tk.END, values=(info.addr, ts, status_text), tags=(tag,))
+        self.client_tree.tag_configure("online", foreground=GREEN)
+        self.client_tree.tag_configure("offline", foreground=RED)
 
     def _update_uptime(self):
         if not self.running:
