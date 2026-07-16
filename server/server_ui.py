@@ -159,8 +159,8 @@ class ServerUI:
         sep = tk.Frame(self.root, height=1, bg=SURFACE_VARIANT)
         sep.pack(fill=tk.X)
 
-        client_container = tk.Frame(self.root, bg=BG, padx=16, pady=(8, 0))
-        client_container.pack(fill=tk.X)
+        client_container = tk.Frame(self.root, bg=BG)
+        client_container.pack(fill=tk.X, padx=16, pady=(8, 0))
 
         tk.Label(
             client_container, text="已连接客户端", font=("Segoe UI", 9, "bold"),
@@ -221,11 +221,9 @@ class ServerUI:
 
     def _apply_tree_style(self):
         style = ttk.Style()
-        style.theme_use("default")
         style.configure("Client.Treeview", background=SURFACE, foreground=TEXT, fieldbackground=SURFACE, borderwidth=0)
         style.configure("Client.Treeview.Heading", background=SURFACE_VARIANT, foreground=TEXT, relief=tk.FLAT, font=("Segoe UI", 9, "bold"))
         style.map("Client.Treeview", background=[("selected", SURFACE_VARIANT)], foreground=[("selected", TEXT)])
-        style.layout("Client.Treeview", [("Client.Treeview.treearea", {"sticky": "nswe"})])
 
     def _toggle_server(self):
         if self.running:
