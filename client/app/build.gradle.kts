@@ -15,6 +15,22 @@ android {
         versionName = "1.0.0-beta1.4"
     }
 
+    signingConfigs {
+        create("release") {
+            storeFile = file("../omnipad-release-key.jks")
+            storePassword = "OmniPad2024"
+            keyAlias = "omnipad"
+            keyPassword = "OmniPad2024"
+        }
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
+        }
+    }
+
     buildFeatures {
         compose = true
     }
