@@ -112,66 +112,6 @@ fun TouchpadScreen(
         ) {
             Spacer(Modifier.height(4.dp))
 
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(320.dp)
-                    .clip(MaterialTheme.shapes.large)
-                    .background(
-                        if (isPressed) {
-                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
-                        } else {
-                            MaterialTheme.colorScheme.surfaceVariant
-                        },
-                    )
-                    .border(
-                        width = 1.dp,
-                        color = if (isPressed) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.outlineVariant
-                        },
-                        shape = MaterialTheme.shapes.large,
-                    )
-                    .pointerInput(Unit) {
-                        detectTapGestures(
-                            onTap = {
-                            onSendMessage(MouseClick("left", "click"))
-                        },
-                            onLongPress = {
-                                onSendMessage(MouseClick("right", "click"))
-                            },
-                        )
-                    }
-                    .pointerInput(Unit) {
-                        detectDragGestures(
-                            onDragStart = { isPressed = true },
-                            onDragEnd = { isPressed = false },
-                            onDragCancel = { isPressed = false },
-                            onDrag = { change, dragAmount ->
-                                change.consume()
-                                dragAccumX.intValue += dragAmount.x.toInt()
-                                dragAccumY.intValue += dragAmount.y.toInt()
-                            },
-                        )
-                    },
-                contentAlignment = Alignment.Center,
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = if (isPressed) "松开以停止拖动" else "触摸板",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = "点击=左键 长按=右键 拖动=移动",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                    )
-                }
-            }
-
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -303,6 +243,66 @@ fun TouchpadScreen(
                     ) {
                         Text(label, style = MaterialTheme.typography.titleMedium)
                     }
+                }
+            }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(320.dp)
+                    .clip(MaterialTheme.shapes.large)
+                    .background(
+                        if (isPressed) {
+                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
+                        } else {
+                            MaterialTheme.colorScheme.surfaceVariant
+                        },
+                    )
+                    .border(
+                        width = 1.dp,
+                        color = if (isPressed) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.outlineVariant
+                        },
+                        shape = MaterialTheme.shapes.large,
+                    )
+                    .pointerInput(Unit) {
+                        detectTapGestures(
+                            onTap = {
+                            onSendMessage(MouseClick("left", "click"))
+                        },
+                            onLongPress = {
+                                onSendMessage(MouseClick("right", "click"))
+                            },
+                        )
+                    }
+                    .pointerInput(Unit) {
+                        detectDragGestures(
+                            onDragStart = { isPressed = true },
+                            onDragEnd = { isPressed = false },
+                            onDragCancel = { isPressed = false },
+                            onDrag = { change, dragAmount ->
+                                change.consume()
+                                dragAccumX.intValue += dragAmount.x.toInt()
+                                dragAccumY.intValue += dragAmount.y.toInt()
+                            },
+                        )
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = if (isPressed) "松开以停止拖动" else "触摸板",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = "点击=左键 长按=右键 拖动=移动",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                    )
                 }
             }
 
