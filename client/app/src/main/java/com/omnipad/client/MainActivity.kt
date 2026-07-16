@@ -40,6 +40,7 @@ class MainActivity : ComponentActivity() {
                 val state by connection.connectionState.collectAsState()
                 var recentHosts by remember { mutableStateOf(hostsStore.get()) }
                 var missedHeartbeats by remember { mutableIntStateOf(0) }
+                var autoDisconnect by remember { mutableStateOf(true) }
 
                 connection.setOnMessageListener { msg ->
                     when (msg) {
@@ -52,8 +53,8 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                LaunchedEffect(state) {
-                    if (state == ConnectionState.CONNECTED) {
+                LaunchedEffect(state, autoDisconnect) {
+                    if (state == ConnectionState.CONNECTED && autoDisconnect) {
                         while (true) {
                             delay(5000)
                             missedHeartbeats++
@@ -77,6 +78,8 @@ class MainActivity : ComponentActivity() {
                             connection.disconnect()
                         },
                         onSendMessage = { connection.sendMessage(it) },
+                        autoDisconnect = autoDisconnect,
+                        onToggleAutoDisconnect = { autoDisconnect = !autoDisconnect },
                         modifier = Modifier.fillMaxSize(),
                     )
                 } else {

@@ -2,8 +2,6 @@ package com.omnipad.client.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
@@ -25,9 +23,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Send
+import kotlinx.coroutines.withTimeoutOrNull
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
-import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
@@ -35,19 +33,21 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.ImeAction
@@ -58,21 +58,25 @@ import com.omnipad.client.network.MouseMove
 import com.omnipad.client.network.OmniPadMessage
 import com.omnipad.client.network.Scroll
 import com.omnipad.client.network.TextInput
+import java.util.concurrent.atomic.AtomicInteger
+import kotlin.math.sqrt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TouchpadScreen(
     onDisconnect: () -> Unit,
     onSendMessage: (OmniPadMessage) -> Unit,
+    autoDisconnect: Boolean,
+    onToggleAutoDisconnect: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var isPressed by remember { mutableStateOf(false) }
     var textInput by remember { mutableStateOf("") }
     val focusManager = LocalFocusManager.current
     val scrollState = rememberScrollState()
-    val dragAccumX = remember { mutableIntStateOf(0) }
-    val dragAccumY = remember { mutableIntStateOf(0) }
-    val scrollAccum = remember { mutableIntStateOf(0) }
+    val dragAccumX = remember { AtomicInteger(0) }
+    val dragAccumY = remember { AtomicInteger(0) }
+    val scrollAccum = remember { AtomicInteger(0) }
     var activeModifiers by remember { mutableStateOf(setOf<String>()) }
     var heldMouseButton by remember { mutableStateOf<String?>(null) }
     val modifierOrder = listOf("ctrl", "shift", "alt", "win")
@@ -87,16 +91,13 @@ fun TouchpadScreen(
     LaunchedEffect(Unit) {
         while (true) {
             kotlinx.coroutines.delay(16)
-            val ax = dragAccumX.intValue
-            val ay = dragAccumY.intValue
+            val ax = dragAccumX.getAndSet(0)
+            val ay = dragAccumY.getAndSet(0)
             if (ax != 0 || ay != 0) {
-                dragAccumX.intValue = 0
-                dragAccumY.intValue = 0
                 onSendMessage(MouseMove(ax, ay))
             }
-            val sc = scrollAccum.intValue
+            val sc = scrollAccum.getAndSet(0)
             if (sc != 0) {
-                scrollAccum.intValue = 0
                 onSendMessage(Scroll(sc))
             }
         }
@@ -113,6 +114,16 @@ fun TouchpadScreen(
                             contentDescription = "Disconnect",
                         )
                     }
+                },
+                actions = {
+                    Switch(
+                        checked = autoDisconnect,
+                        onCheckedChange = { onToggleAutoDisconnect() },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = MaterialTheme.colorScheme.primary,
+                            checkedTrackColor = MaterialTheme.colorScheme.primaryContainer,
+                        ),
+                    )
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface,
@@ -332,39 +343,27 @@ fun TouchpadScreen(
                         shape = MaterialTheme.shapes.large,
                     )
                     .pointerInput(Unit) {
-                        detectTapGestures(
-                            onTap = {
-                                onSendMessage(MouseClick("left", "click"))
-                            },
-                            onLongPress = {
-                                onSendMessage(MouseClick("right", "click"))
-                            },
-                        )
-                    }
-                    .pointerInput(Unit) {
-                        detectDragGestures(
-                            onDragStart = { isPressed = true },
-                            onDragEnd = { isPressed = false },
-                            onDragCancel = { isPressed = false },
-                            onDrag = { change, dragAmount ->
-                                change.consume()
-                                dragAccumX.intValue += dragAmount.x.toInt()
-                                dragAccumY.intValue += dragAmount.y.toInt()
-                            },
-                        )
-                    }
-                    .pointerInput(Unit) {
                         awaitEachGesture {
                             val first = awaitFirstDown(requireUnconsumed = false)
-                            val secondFinger: Any? = withTimeoutOrNull(80) {
-                                var event = awaitPointerEvent()
+                            isPressed = true
+                            var lastPos = first.position
+                            val startPos = first.position
+
+                            val isMultiTouch = withTimeoutOrNull(80L) {
+                                var event = awaitPointerEvent(PointerEventPass.Main)
                                 while (event.changes.count { it.pressed } < 2) {
-                                    event = awaitPointerEvent()
+                                    val c = event.changes.firstOrNull { it.id == first.id }
+                                    if (c != null) {
+                                        lastPos = c.position
+                                        c.consume()
+                                    }
+                                    event = awaitPointerEvent(PointerEventPass.Main)
                                 }
                                 true
                             }
-                            if (secondFinger != null) {
-                                var lastY = first.position.y
+
+                            if (isMultiTouch != null) {
+                                var lastY = lastPos.y
                                 while (true) {
                                     val event = awaitPointerEvent()
                                     val pressed = event.changes.filter { it.pressed }
@@ -372,12 +371,59 @@ fun TouchpadScreen(
                                     val avgY = pressed.map { it.position.y }.average().toFloat()
                                     val delta = ((lastY - avgY) / 3).toInt()
                                     if (delta != 0) {
-                                        scrollAccum.intValue += delta
+                                        scrollAccum.addAndGet(delta)
                                     }
                                     lastY = avgY
                                     pressed.forEach { it.consume() }
                                 }
+                            } else {
+                                var hasMoved = false
+                                val slopPx = 8f
+                                val longPressMs = 400L
+                                val startTime = System.nanoTime()
+
+                                while (true) {
+                                    val event = awaitPointerEvent(PointerEventPass.Main)
+                                    val change = event.changes.firstOrNull { it.id == first.id }
+                                    if (change == null || !change.pressed) break
+
+                                    val totalDx = change.position.x - startPos.x
+                                    val totalDy = change.position.y - startPos.y
+                                    val dist = sqrt(totalDx * totalDx + totalDy * totalDy)
+                                    val dx = change.position.x - lastPos.x
+                                    val dy = change.position.y - lastPos.y
+
+                                    if (!hasMoved && dist > slopPx) {
+                                        hasMoved = true
+                                    }
+
+                                    if (hasMoved) {
+                                        dragAccumX.addAndGet(dx.toInt())
+                                        dragAccumY.addAndGet(dy.toInt())
+                                        lastPos = change.position
+                                    } else {
+                                        val elapsed = (System.nanoTime() - startTime) / 1_000_000L
+                                        if (elapsed > longPressMs) {
+                                            onSendMessage(MouseClick("right", "click"))
+                                            while (true) {
+                                                val up = awaitPointerEvent()
+                                                val uc = up.changes.firstOrNull { it.id == first.id }
+                                                if (uc == null || !uc.pressed) break
+                                                uc.consume()
+                                            }
+                                            break
+                                        }
+                                    }
+
+                                    change.consume()
+                                }
+
+                                if (!hasMoved) {
+                                    onSendMessage(MouseClick("left", "click"))
+                                }
                             }
+
+                            isPressed = false
                         }
                     },
                 contentAlignment = Alignment.Center,
