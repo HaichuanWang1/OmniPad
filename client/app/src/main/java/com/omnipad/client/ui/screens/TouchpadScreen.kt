@@ -4,6 +4,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import kotlinx.coroutines.withTimeoutOrNull
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -47,7 +50,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.ImeAction
@@ -343,82 +345,52 @@ fun TouchpadScreen(
                         shape = MaterialTheme.shapes.large,
                     )
                     .pointerInput(Unit) {
+                        detectTapGestures(
+                            onTap = {
+                                onSendMessage(MouseClick("left", "click"))
+                            },
+                            onLongPress = {
+                                onSendMessage(MouseClick("right", "click"))
+                            },
+                        )
+                    }
+                    .pointerInput(Unit) {
+                        detectDragGestures(
+                            onDragStart = { isPressed = true },
+                            onDragEnd = { isPressed = false },
+                            onDragCancel = { isPressed = false },
+                            onDrag = { change, dragAmount ->
+                                change.consume()
+                                dragAccumX.addAndGet(dragAmount.x.toInt())
+                                dragAccumY.addAndGet(dragAmount.y.toInt())
+                            },
+                        )
+                    }
+                    .pointerInput(Unit) {
                         awaitEachGesture {
                             val first = awaitFirstDown(requireUnconsumed = false)
-                            isPressed = true
-                            var lastPos = first.position
-                            val startPos = first.position
-                            val startTime = System.nanoTime()
-
-                            var isScrolling = false
-                            var hasMovedPastSlop = false
-                            var actionSent = false
-
-                            while (true) {
-                                val event = awaitPointerEvent(PointerEventPass.Main)
-                                val my = event.changes.firstOrNull { it.id == first.id }
-                                val pressedCount = event.changes.count { it.pressed }
-
-                                if (pressedCount == 0) break
-
-                                if (!isScrolling && pressedCount >= 2) {
-                                    isScrolling = true
-                                    scrollAccum.set(0)
-                                    lastPos = first.position
+                            val secondFinger: Any? = withTimeoutOrNull(80L) {
+                                var event = awaitPointerEvent()
+                                while (event.changes.count { it.pressed } < 2) {
+                                    event = awaitPointerEvent()
                                 }
-
-                                if (isScrolling) {
+                                true
+                            }
+                            if (secondFinger != null) {
+                                var lastY = first.position.y
+                                while (true) {
+                                    val event = awaitPointerEvent()
                                     val pressed = event.changes.filter { it.pressed }
                                     if (pressed.size < 2) break
                                     val avgY = pressed.map { it.position.y }.average().toFloat()
-                                    val delta = ((lastPos.y - avgY) / 3).toInt()
+                                    val delta = ((lastY - avgY) / 3).toInt()
                                     if (delta != 0) {
                                         scrollAccum.addAndGet(delta)
                                     }
-                                    lastPos = first.position.copy(y = avgY)
+                                    lastY = avgY
                                     pressed.forEach { it.consume() }
-                                    continue
                                 }
-
-                                if (my == null || !my.pressed) break
-
-                                val dx = my.position.x - lastPos.x
-                                val dy = my.position.y - lastPos.y
-                                val totalDx = my.position.x - startPos.x
-                                val totalDy = my.position.y - startPos.y
-                                val dist = sqrt(totalDx * totalDx + totalDy * totalDy)
-
-                                if (!hasMovedPastSlop && dist > 8f) {
-                                    hasMovedPastSlop = true
-                                }
-
-                                dragAccumX.addAndGet(dx.toInt())
-                                dragAccumY.addAndGet(dy.toInt())
-                                lastPos = my.position
-
-                                if (!hasMovedPastSlop) {
-                                    val elapsed = (System.nanoTime() - startTime) / 1_000_000L
-                                    if (elapsed > 400L) {
-                                        onSendMessage(MouseClick("right", "click"))
-                                        actionSent = true
-                                        while (true) {
-                                            val up = awaitPointerEvent()
-                                            val uc = up.changes.firstOrNull { it.id == first.id }
-                                            if (uc == null || !uc.pressed) break
-                                            uc.consume()
-                                        }
-                                        break
-                                    }
-                                }
-
-                                my.consume()
                             }
-
-                            if (!actionSent && !hasMovedPastSlop) {
-                                onSendMessage(MouseClick("left", "click"))
-                            }
-
-                            isPressed = false
                         }
                     },
                 contentAlignment = Alignment.Center,
