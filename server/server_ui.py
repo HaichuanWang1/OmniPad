@@ -119,12 +119,11 @@ class ServerUI:
         )
         self.status_label.pack(anchor="w")
 
-        lan_ip = get_lan_ip()
         self.connect_info = tk.Label(
-            title_frame, text=f"手机连接：{lan_ip}:5800",
-            font=("Consolas", 10, "bold"), fg=PRIMARY, bg=BG, anchor="w",
+            title_frame, font=("Consolas", 10, "bold"), fg=PRIMARY, bg=BG, anchor="w",
         )
         self.connect_info.pack(anchor="w", pady=(4, 0))
+        self._update_connect_info()
 
         control_frame = tk.Frame(header, bg=BG)
         control_frame.pack(side=tk.RIGHT)
@@ -147,6 +146,7 @@ class ServerUI:
         )
         self.port_entry.insert(0, "5800")
         self.port_entry.pack(side=tk.LEFT)
+        self.port_entry.bind("<KeyRelease>", lambda _: self._update_connect_info())
 
         self.toggle_btn = tk.Button(
             control_frame, text="启动", font=("Segoe UI", 10, "bold"),
@@ -253,6 +253,7 @@ class ServerUI:
         self.running = True
 
         self._update_status(GREEN, "运行中")
+        self._update_connect_info(port)
         self._start_time = datetime.now()
         self._update_uptime()
 
@@ -275,12 +276,18 @@ class ServerUI:
         self.running = False
 
         self._update_status(RED, "已停止")
+        self._update_connect_info()
         self._update_clients()
         self.uptime_label.config(text="运行时间: --")
 
     def _update_status(self, color, text):
         self.status_dot.itemconfig(self.status_indicator, fill=color)
         self.status_label.config(text=text)
+
+    def _update_connect_info(self, port=None):
+        lan_ip = get_lan_ip()
+        p = port if port else (self.port_entry.get().strip() or "5800")
+        self.connect_info.config(text=f"手机连接：{lan_ip}:{p}")
 
     def _update_clients(self):
         for row in self.client_tree.get_children():
