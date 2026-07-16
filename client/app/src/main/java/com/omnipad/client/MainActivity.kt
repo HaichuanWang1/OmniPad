@@ -50,6 +50,10 @@ class MainActivity : ComponentActivity() {
                                 recentHosts = hostsStore.get()
                             }
                         },
+                        onDeleteHost = { host, port ->
+                            hostsStore.remove(host, port)
+                            recentHosts = hostsStore.get()
+                        },
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
