@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -69,6 +70,7 @@ fun TouchpadScreen(
     val scrollState = rememberScrollState()
     val dragAccumX = remember { mutableIntStateOf(0) }
     val dragAccumY = remember { mutableIntStateOf(0) }
+    val scrollAccum = remember { mutableIntStateOf(0) }
 
     LaunchedEffect(Unit) {
         while (true) {
@@ -79,6 +81,11 @@ fun TouchpadScreen(
                 dragAccumX.intValue = 0
                 dragAccumY.intValue = 0
                 onSendMessage(MouseMove(ax, ay))
+            }
+            val sc = scrollAccum.intValue
+            if (sc != 0) {
+                scrollAccum.intValue = 0
+                onSendMessage(Scroll(if (sc > 0) 1 else -1))
             }
         }
     }
@@ -288,6 +295,14 @@ fun TouchpadScreen(
                                 dragAccumY.intValue += dragAmount.y.toInt()
                             },
                         )
+                    }
+                    .pointerInput(Unit) {
+                        detectTransformGestures { _, pan, _, _ ->
+                            val delta = -pan.y.toInt()
+                            if (delta != 0) {
+                                scrollAccum.intValue += delta
+                            }
+                        }
                     },
                 contentAlignment = Alignment.Center,
             ) {
@@ -299,7 +314,7 @@ fun TouchpadScreen(
                     )
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        text = "点击=左键 长按=右键 拖动=移动",
+                        text = "点击=左键 长按=右键 拖动=移动 双指=滚动",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                     )
