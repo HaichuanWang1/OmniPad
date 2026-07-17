@@ -4,6 +4,7 @@ import queue
 import socket
 import threading
 import tkinter as tk
+import webbrowser
 from tkinter import ttk
 from datetime import datetime
 
@@ -212,6 +213,21 @@ class ServerUI:
         )
         self.uptime_label.pack(side=tk.LEFT)
 
+        right_frame = tk.Frame(status_bar, bg=SURFACE)
+        right_frame.pack(side=tk.RIGHT)
+
+        tk.Label(
+            right_frame, text="超重氢", font=("Segoe UI", 9),
+            fg=TEXT_DIM, bg=SURFACE,
+        ).pack(side=tk.LEFT, padx=(0, 4))
+
+        github_btn = tk.Label(
+            right_frame, text="GitHub", font=("Segoe UI", 9, "underline"),
+            fg=PRIMARY, bg=SURFACE, cursor="hand2",
+        )
+        github_btn.pack(side=tk.LEFT)
+        github_btn.bind("<Button-1>", lambda _: webbrowser.open("https://github.com/HaichuanWang1/OmniPad"))
+
     def _apply_text_tags(self):
         for level, color in COLORS.items():
             self.log_text.tag_config(level.lower(), foreground=color)
@@ -221,9 +237,9 @@ class ServerUI:
 
     def _apply_tree_style(self):
         style = ttk.Style()
-        style.configure("Client.Treeview", background=SURFACE, foreground=TEXT, fieldbackground=SURFACE, borderwidth=0)
-        style.configure("Client.Treeview.Heading", background=SURFACE_VARIANT, foreground=TEXT, relief=tk.FLAT, font=("Segoe UI", 9, "bold"))
-        style.map("Client.Treeview", background=[("selected", SURFACE_VARIANT)], foreground=[("selected", TEXT)])
+        style.configure("Client.Treeview", background=BG, foreground=TEXT, fieldbackground=BG, borderwidth=0)
+        style.configure("Client.Treeview.Heading", background=SURFACE, foreground=TEXT, relief=tk.FLAT, font=("Segoe UI", 9, "bold"))
+        style.map("Client.Treeview", background=[("selected", SURFACE)], foreground=[("selected", TEXT)])
 
     def _toggle_server(self):
         if self.running:
