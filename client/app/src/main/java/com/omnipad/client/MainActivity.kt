@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -17,13 +16,11 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.lifecycleScope
 import com.omnipad.client.network.ConnectionState
 import com.omnipad.client.network.Error
-import com.omnipad.client.network.HeartbeatAck
 import com.omnipad.client.network.OmniPadConnection
 import com.omnipad.client.network.RecentHostsStore
 import com.omnipad.client.ui.screens.ConnectScreen
 import com.omnipad.client.ui.screens.TouchpadScreen
 import com.omnipad.client.ui.theme.OmniPadTheme
-import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
 
@@ -38,48 +35,38 @@ class MainActivity : ComponentActivity() {
         setContent {
             OmniPadTheme {
                 val state by connection.connectionState.collectAsState()
+                val lastError by connection.lastError.collectAsState()
                 var recentHosts by remember { mutableStateOf(hostsStore.get()) }
-                var missedHeartbeats by remember { mutableIntStateOf(0) }
                 var autoDisconnect by remember { mutableStateOf(true) }
 
-                connection.setOnMessageListener { msg ->
-                    when (msg) {
-                        is HeartbeatAck -> missedHeartbeats = 0
-                        is Error -> {
-                            val text = "服务器错误: ${msg.message}"
-                            Toast.makeText(this@MainActivity, text, Toast.LENGTH_SHORT).show()
+                // 监听器只在进入组合时设置一次。原先直接写在组合体内，
+                // 每次重组都会重新赋值，是典型的副作用误用。
+                LaunchedEffect(Unit) {
+                    connection.setOnMessageListener { msg ->
+                        if (msg is Error) {
+                            Toast.makeText(
+                                this@MainActivity,
+                                "服务器错误: ${msg.message}",
+                                Toast.LENGTH_SHORT,
+                            ).show()
                         }
-                        else -> {}
                     }
                 }
 
-                LaunchedEffect(state, autoDisconnect) {
-                    // 连接状态或自动断开开关变化时重置心跳计数器
-                    missedHeartbeats = 0
-                    if (state == ConnectionState.CONNECTED && autoDisconnect) {
-                        // 状态变为非 CONNECTED 或关闭自动断开时立即退出循环
-                        while (state == ConnectionState.CONNECTED && autoDisconnect) {
-                            delay(5000)
-                            missedHeartbeats++
-                            if (missedHeartbeats >= 3) {
-                                connection.disconnect()
-                                Toast.makeText(
-                                    this@MainActivity, "连接已断开：服务器无响应",
-                                    Toast.LENGTH_LONG,
-                                ).show()
-                                missedHeartbeats = 0
-                                break
-                            }
-                        }
-                    }
+                // 心跳与超时判定都在连接层，这里只把用户开关同步过去
+                LaunchedEffect(autoDisconnect) {
+                    connection.autoDisconnect = autoDisconnect
+                }
+
+                LaunchedEffect(lastError) {
+                    val message = lastError ?: return@LaunchedEffect
+                    Toast.makeText(this@MainActivity, message, Toast.LENGTH_LONG).show()
+                    connection.clearLastError()
                 }
 
                 if (state == ConnectionState.CONNECTED) {
                     TouchpadScreen(
-                        onDisconnect = {
-                            missedHeartbeats = 0
-                            connection.disconnect()
-                        },
+                        onDisconnect = { connection.disconnect() },
                         onSendMessage = { connection.sendMessage(it) },
                         autoDisconnect = autoDisconnect,
                         onToggleAutoDisconnect = { autoDisconnect = !autoDisconnect },

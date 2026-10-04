@@ -18,8 +18,27 @@ enum class ConnectionState {
 
 class OmniPadConnection(private val scope: CoroutineScope) {
 
+    companion object {
+        /** 心跳发送间隔，与 docs/protocol.md 一致。 */
+        private const val HEARTBEAT_INTERVAL_MS = 5000L
+
+        /** 连续丢失多少次心跳后判定连接已断（5s × 3 = 15s，与文档一致）。 */
+        private const val MAX_MISSED_HEARTBEATS = 3
+    }
+
     private val _connectionState = MutableStateFlow(ConnectionState.DISCONNECTED)
     val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
+
+    private val _lastError = MutableStateFlow<String?>(null)
+
+    /** 最近一次需要提示用户的错误；UI 展示后应调用 [clearLastError]。 */
+    val lastError: StateFlow<String?> = _lastError.asStateFlow()
+
+    /**
+     * 是否在连续丢失心跳后自动断开，由 UI 同步用户开关。
+     * 关闭时只持续发心跳、不主动断开。
+     */
+    var autoDisconnect: Boolean = true
 
     private var socket: Socket? = null
     private var writer: OutputStreamWriter? = null
@@ -27,6 +46,7 @@ class OmniPadConnection(private val scope: CoroutineScope) {
     private var heartbeatJob: Job? = null
     private var readerJob: Job? = null
     private var writerJob: Job? = null
+    private var missedHeartbeats = 0
 
     /**
      * 发送队列。所有出站消息都经此进入唯一的写协程，保证到达顺序与调用顺序一致 ——
@@ -38,6 +58,10 @@ class OmniPadConnection(private val scope: CoroutineScope) {
 
     fun setOnMessageListener(listener: (OmniPadMessage) -> Unit) {
         onMessage = listener
+    }
+
+    fun clearLastError() {
+        _lastError.value = null
     }
 
     fun connect(host: String, port: Int, onConnected: () -> Unit = {}, onFailed: (String) -> Unit = {}) {
@@ -90,6 +114,7 @@ class OmniPadConnection(private val scope: CoroutineScope) {
     fun disconnect() {
         outgoing?.close()
         outgoing = null
+        missedHeartbeats = 0
         heartbeatJob?.cancel()
         readerJob?.cancel()
         writerJob?.cancel()
@@ -134,13 +159,28 @@ class OmniPadConnection(private val scope: CoroutineScope) {
         }
     }
 
+    /**
+     * 心跳发送与超时判定都在连接层，UI 不再自己数心跳。
+     *
+     * 每轮先记一次「未确认」，再发心跳并等待一个间隔；收到 heartbeat_ack 时计数
+     * 清零。因此计数超过 [MAX_MISSED_HEARTBEATS] 恰好意味着连续 15 秒没有收到
+     * 任何确认，与 docs/protocol.md 的规定一致。
+     */
     private fun startHeartbeat() {
+        missedHeartbeats = 0
         heartbeatJob = scope.launch(Dispatchers.IO) {
-            while (isActive) {
-                delay(5000)
-                if (_connectionState.value == ConnectionState.CONNECTED) {
-                    sendMessage(Heartbeat)
+            while (isActive && _connectionState.value == ConnectionState.CONNECTED) {
+                missedHeartbeats++
+                if (missedHeartbeats > MAX_MISSED_HEARTBEATS) {
+                    if (autoDisconnect) {
+                        _lastError.value = "连接已断开：服务器无响应"
+                        disconnect()
+                        break
+                    }
+                    missedHeartbeats = 0   // 用户关闭了自动断开，继续尝试
                 }
+                sendMessage(Heartbeat)
+                delay(HEARTBEAT_INTERVAL_MS)
             }
         }
     }
@@ -153,6 +193,8 @@ class OmniPadConnection(private val scope: CoroutineScope) {
                     if (line.isNotEmpty()) {
                         val msg = parseMessage(line)
                         if (msg != null) {
+                            // 心跳确认在连接层内部消化，UI 无需关心
+                            if (msg is HeartbeatAck) missedHeartbeats = 0
                             withContext(Dispatchers.Main) {
                                 onMessage?.invoke(msg)
                             }
