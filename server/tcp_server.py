@@ -62,7 +62,7 @@ class TcpServer:
     def _handle_client(self, conn, addr):
         conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         conn.settimeout(30)
-        buffer = ""
+        buffer = b""
         last_message = time.time()
         try:
             while self.running:
@@ -73,18 +73,20 @@ class TcpServer:
                 if not data:
                     break
 
-                try:
-                    decoded = data.decode("utf-8")
-                except UnicodeDecodeError:
-                    decoded = data.decode("utf-8", errors="surrogateescape")
-                    logger.warning(f"client {addr} sent partial UTF-8, used surrogateescape")
+                # 按字节累积：一个 UTF-8 多字节字符（中文 3 字节）可能被 TCP
+                # 分片切开，必须等完整的 \n 行到齐后再整体解码，否则会被
+                # surrogateescape 拆成孤立代理字符，导致中文输入损坏。
+                buffer += data
 
-                buffer += decoded
-
-                while "\n" in buffer:
-                    line, buffer = buffer.split("\n", 1)
-                    line = line.strip()
-                    if not line:
+                while b"\n" in buffer:
+                    raw_line, buffer = buffer.split(b"\n", 1)
+                    if not raw_line.strip():
+                        continue
+                    try:
+                        line = raw_line.decode("utf-8")
+                    except UnicodeDecodeError:
+                        logger.warning(f"client {addr} sent invalid UTF-8, message dropped")
+                        send_error(conn, "INVALID_PARAMS", "invalid UTF-8")
                         continue
                     try:
                         msg = json.loads(line)
