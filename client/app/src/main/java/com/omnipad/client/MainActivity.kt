@@ -54,8 +54,11 @@ class MainActivity : ComponentActivity() {
                 }
 
                 LaunchedEffect(state, autoDisconnect) {
+                    // 连接状态或自动断开开关变化时重置心跳计数器
+                    missedHeartbeats = 0
                     if (state == ConnectionState.CONNECTED && autoDisconnect) {
-                        while (true) {
+                        // 状态变为非 CONNECTED 或关闭自动断开时立即退出循环
+                        while (state == ConnectionState.CONNECTED && autoDisconnect) {
                             delay(5000)
                             missedHeartbeats++
                             if (missedHeartbeats >= 3) {
