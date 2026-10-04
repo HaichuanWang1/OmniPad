@@ -15,6 +15,15 @@ KEYEVENTF_KEYDOWN = 0x0000
 KEYEVENTF_KEYUP = 0x0002
 KEYEVENTF_UNICODE = 0x0004
 KEYEVENTF_SCANCODE = 0x0008
+KEYEVENTF_EXTENDEDKEY = 0x0001
+
+# 虚拟键码在增强键盘上需要 KEYEVENTF_EXTENDEDKEY 标志才能在目标应用中正确识别
+EXTENDED_VK_SET = {
+    0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28,  # PageUp/Down, Home, End, 方向键
+    0x2C, 0x2D, 0x2E,  # Print Screen, Insert, Delete
+    0x5B, 0x5C, 0x5D,  # Left/Right Win, Application
+    0x90, 0x91,         # Num Lock, Scroll Lock
+}
 
 INPUT_MOUSE = 0
 INPUT_KEYBOARD = 1
@@ -158,12 +167,15 @@ def press_key(key_name, action):
     is_down = action in ("down", "press")
     is_up = action in ("up", "press")
 
+    is_extended = vk in EXTENDED_VK_SET
+    extended_flag = KEYEVENTF_EXTENDEDKEY if is_extended else 0
+
     inputs = []
     if is_down:
         ki = KEYBDINPUT()
         ki.wVk = vk
         ki.wScan = 0
-        ki.dwFlags = KEYEVENTF_KEYDOWN
+        ki.dwFlags = KEYEVENTF_KEYDOWN | extended_flag
         ki.time = 0
         inp = INPUT()
         inp.type = INPUT_KEYBOARD
@@ -174,7 +186,7 @@ def press_key(key_name, action):
         ki = KEYBDINPUT()
         ki.wVk = vk
         ki.wScan = 0
-        ki.dwFlags = KEYEVENTF_KEYUP
+        ki.dwFlags = KEYEVENTF_KEYUP | extended_flag
         ki.time = 0
         inp = INPUT()
         inp.type = INPUT_KEYBOARD
