@@ -1,14 +1,17 @@
-r"""tcp_server 回归测试。
+r"""tcp_server 回归测试：分帧、连接生命周期。
 
-验证 UTF-8 多字节字符（如中文，3 字节）被 TCP 分片切开时不会被损坏。
+覆盖两类曾经出过问题的地方：
 
-历史 bug：`tcp_server._handle_client` 曾对每个 recv 块独立调用
-`data.decode("utf-8")`，失败时回退 `errors="surrogateescape"`，
-把跨片的多字节字符拆成孤立代理字符（`"测"` -> `'\udce6\udcb5\udc8b'`），
-导致长文本 / 网络抖动时中文输入随机损坏。
+1. **分帧**：`_handle_client` 曾对每个 recv 块独立调用 `data.decode("utf-8")`，
+   失败时回退 `errors="surrogateescape"`。一个中文字符占 3 字节，跨 TCP 段被
+   切开时会被拆成孤立代理字符（`"测"` -> `'\udce6\udcb5\udc8b'`），导致长文本
+   或网络抖动时中文输入随机损坏。
+
+2. **连接生命周期**：handler 返回 False 时只跳出内层行循环，连接不会关闭；
+   以及空闲超时被 `settimeout(30)` 架空，与 docs/protocol.md 规定的 15s 不符。
 
 运行：
-    cd server && python test_tcp_framing.py
+    cd server && python test_tcp_server.py
 """
 import json
 import socket
@@ -19,7 +22,11 @@ import unittest
 import tcp_server
 
 
-class TcpFramingTest(unittest.TestCase):
+class _ServerTestCase(unittest.TestCase):
+    """起一个真实 TCP 服务端，但把消息处理替换成可观测的假实现。"""
+
+    IDLE_TIMEOUT = 15
+
     def setUp(self):
         self.received = []
         self.errors = []
@@ -30,7 +37,9 @@ class TcpFramingTest(unittest.TestCase):
         tcp_server.handle_message = self._fake_handle
         tcp_server.send_error = self._fake_error
 
-        self.server = tcp_server.TcpServer(host="127.0.0.1", port=0)
+        self.server = tcp_server.TcpServer(
+            host="127.0.0.1", port=0, idle_timeout=self.IDLE_TIMEOUT
+        )
         threading.Thread(target=self.server.start, daemon=True).start()
 
         deadline = time.time() + 5
@@ -76,8 +85,8 @@ class TcpFramingTest(unittest.TestCase):
             time.sleep(0.01)
         return False
 
-    # --- 回归用例 -------------------------------------------------------
 
+class TcpFramingTest(_ServerTestCase):
     def test_multibyte_split_one_byte_at_a_time(self):
         """最坏情况：中文消息被逐字节发送，每个字符都跨片。"""
         text = "测试中文输入"
@@ -137,7 +146,7 @@ class TcpFramingTest(unittest.TestCase):
         self.assertEqual(self.received, lines)
 
     def test_invalid_utf8_is_rejected_without_crashing(self):
-        """非法字节序列应回报 INVALID_UTF8 而不是崩溃或静默吞掉。"""
+        """非法字节序列应回报 INVALID_PARAMS 而不是崩溃或静默吞掉。"""
         self._send(b"\xff\xfe\xfa\n", chunk_size=4)
 
         self.assertEqual(self.received, [])
@@ -159,7 +168,11 @@ class TcpFramingTest(unittest.TestCase):
         self.assertEqual(self.errors, [])
         self.assertEqual(self.received, [{"type": "heartbeat"}])
 
-    # --- 连接生命周期 ---------------------------------------------------
+
+class ConnectionLifecycleTest(_ServerTestCase):
+    # 用 1 秒而非默认 15 秒，让空闲超时用例跑得快；
+    # 旧实现固定 settimeout(30)，此用例会在 6 秒内超时失败。
+    IDLE_TIMEOUT = 1
 
     def test_handler_returning_false_closes_connection(self):
         """handler 返回 False（如 VERSION_MISMATCH）必须真正关闭连接。
@@ -180,6 +193,39 @@ class TcpFramingTest(unittest.TestCase):
 
         self.assertEqual(data, b"")
         self.assertEqual(len(self.received), 1)
+
+    def test_idle_client_is_disconnected_after_timeout(self):
+        """对端静默超过 idle_timeout 后服务端必须主动断开。
+
+        docs/protocol.md 规定 15 秒。原实现是 conn.settimeout(30)，recv 会一直
+        阻塞到 30 秒才超时，空闲判定只可能在 recv 返回后执行 —— 实际要等满 30s。
+        """
+        with socket.create_connection(("127.0.0.1", self.port), timeout=5) as sock:
+            sock.settimeout(self.IDLE_TIMEOUT + 5)
+            started = time.time()
+            try:
+                data = sock.recv(4096)
+            except socket.timeout:
+                self.fail(
+                    f"空闲 {self.IDLE_TIMEOUT}s 后服务端仍未断开连接"
+                )
+            elapsed = time.time() - started
+
+        self.assertEqual(data, b"")
+        self.assertGreaterEqual(
+            elapsed, self.IDLE_TIMEOUT * 0.8,
+            f"连接断开过早（{elapsed:.2f}s），空闲判定可能没生效",
+        )
+
+    def test_activity_resets_idle_timer(self):
+        """持续有心跳时不得被空闲超时误杀。"""
+        with socket.create_connection(("127.0.0.1", self.port), timeout=5) as sock:
+            deadline = time.time() + self.IDLE_TIMEOUT * 2.5
+            while time.time() < deadline:
+                sock.sendall(json.dumps({"type": "heartbeat"}).encode() + b"\n")
+                time.sleep(self.IDLE_TIMEOUT / 3)
+            # 连接仍然活着：服务端没有关闭它，且我们收到了全部心跳
+            self.assertGreater(len(self.received), 2)
 
 
 if __name__ == "__main__":
