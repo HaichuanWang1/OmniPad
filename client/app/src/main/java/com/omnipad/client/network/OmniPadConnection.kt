@@ -1,6 +1,7 @@
 package com.omnipad.client.network
 
 import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -25,6 +26,13 @@ class OmniPadConnection(private val scope: CoroutineScope) {
     private var reader: BufferedReader? = null
     private var heartbeatJob: Job? = null
     private var readerJob: Job? = null
+    private var writerJob: Job? = null
+
+    /**
+     * 发送队列。所有出站消息都经此进入唯一的写协程，保证到达顺序与调用顺序一致 ——
+     * 组合键（ctrl down → c press → ctrl up）和鼠标移动序列都依赖严格顺序。
+     */
+    private var outgoing: Channel<OmniPadMessage>? = null
 
     private var onMessage: ((OmniPadMessage) -> Unit)? = null
 
@@ -44,15 +52,20 @@ class OmniPadConnection(private val scope: CoroutineScope) {
                 sock.connect(InetSocketAddress(host, port), 5000)
                 sock.soTimeout = 30000
                 socket = sock
-                writer = OutputStreamWriter(sock.getOutputStream(), Charsets.UTF_8)
+                val out = OutputStreamWriter(sock.getOutputStream(), Charsets.UTF_8)
+                writer = out
                 reader = BufferedReader(InputStreamReader(sock.getInputStream(), Charsets.UTF_8))
 
-                sendMessage(Handshake())
+                // 握手必须在写协程启动前同步发出，保证它是这条连接上的第一条消息。
+                out.write(Handshake().toJson() + "\n")
+                out.flush()
+
                 val response = reader?.readLine()
                 if (response != null) {
                     val msg = parseMessage(response)
                     if (msg is HandshakeAck) {
                         _connectionState.value = ConnectionState.CONNECTED
+                        startWriter()
                         withContext(Dispatchers.Main) { onConnected() }
                         startHeartbeat()
                         startReader()
@@ -75,8 +88,14 @@ class OmniPadConnection(private val scope: CoroutineScope) {
     }
 
     fun disconnect() {
+        outgoing?.close()
+        outgoing = null
         heartbeatJob?.cancel()
         readerJob?.cancel()
+        writerJob?.cancel()
+        heartbeatJob = null
+        readerJob = null
+        writerJob = null
         try {
             writer?.close()
             reader?.close()
@@ -88,11 +107,27 @@ class OmniPadConnection(private val scope: CoroutineScope) {
         _connectionState.value = ConnectionState.DISCONNECTED
     }
 
+    /**
+     * 入队一条消息后立即返回。实际写出由 [startWriter] 启动的唯一写协程串行完成，
+     * 因此不会再出现多条消息并发写同一个 OutputStreamWriter 而交错损坏的情况。
+     *
+     * 队列无上限：鼠标拖动约 60fps，且按键组合不允许丢，故不设丢弃策略。
+     * 未连接时静默丢弃（与服务端断开后的既有行为一致）。
+     */
     fun sendMessage(msg: OmniPadMessage) {
-        scope.launch(Dispatchers.IO) {
+        outgoing?.trySend(msg)
+    }
+
+    /** 启动唯一写协程：串行消费发送队列，保证消息按入队顺序到达服务端。 */
+    private fun startWriter() {
+        val channel = Channel<OmniPadMessage>(Channel.UNLIMITED)
+        outgoing = channel
+        writerJob = scope.launch(Dispatchers.IO) {
             try {
-                writer?.write(msg.toJson() + "\n")
-                writer?.flush()
+                for (msg in channel) {
+                    writer?.write(msg.toJson() + "\n")
+                    writer?.flush()
+                }
             } catch (_: Exception) {
                 disconnect()
             }
