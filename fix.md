@@ -85,7 +85,7 @@ while b"\n" in buffer:
 - [ ] jks 移出版本控制
 - [ ] .gitignore 补齐
 - [ ] 口令外置
-- [ ] ⚠️ 密钥已泄露，是否需要重新生成签名密钥并轮换口令（**需你决定**）
+- [x] ⚠️ 密钥已泄露 —— 已决定**不轮换**，继续使用现有密钥（beta 阶段用户量小）
 
 ---
 
@@ -278,7 +278,10 @@ java.lang.NumberFormatException: For input string: "37.0"
 | B. 升级 AGP + Gradle 到认识点号平台名的版本 | 彻底；但本地缓存的 AGP 8.5.0 同样早于该命名，需 AGP 8.13+，且 AGP 9 有破坏性变更 |
 | C. 从本机 SDK 移除 `android-36.1` / `android-37.0` / `android-37.0-2` | 治本于本机；但会失去这些平台，且属于改动本机 SDK 而非仓库 |
 
-- [ ] 待定（**需你选择**）
+- [x] 采用方案 A：`lint { checkReleaseBuilds = false }`
+      已验证 `./gradlew :app:assembleRelease`（不带 `-x`）BUILD SUCCESSFUL，
+      产出 app-release.apk 且签名有效
+- [ ] 根治：升级 AGP 到 8.13+ 后恢复该门禁
 
 ---
 
