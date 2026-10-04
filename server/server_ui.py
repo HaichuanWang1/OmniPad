@@ -1,4 +1,3 @@
-import json
 import logging
 import queue
 import socket
@@ -8,8 +7,7 @@ import webbrowser
 from tkinter import ttk
 from datetime import datetime
 
-from input_controller import move_mouse, click_mouse, scroll, send_text, press_key
-from protocol import handler, handle_message, send_json, send_error
+import handlers  # noqa: F401  导入即完成全部消息处理器的注册
 from tcp_server import TcpServer as BaseTcpServer
 
 BG = "#0F1117"
@@ -373,77 +371,6 @@ def configure_logging():
     console = logging.StreamHandler()
     console.setFormatter(formatter)
     root_logger.addHandler(console)
-
-
-@handler("handshake")
-def on_handshake(conn, msg):
-    version = msg.get("version", "")
-    if version != "1.0":
-        send_error(conn, "VERSION_MISMATCH", f"expected 1.0 got {version}")
-        return False
-    send_json(conn, {"type": "handshake_ack", "version": "1.0"})
-    logging.getLogger("OmniPad").info(f"handshake OK, version={version}")
-    return True
-
-
-@handler("heartbeat")
-def on_heartbeat(conn, msg):
-    send_json(conn, {"type": "heartbeat_ack"})
-    return True
-
-
-@handler("mouse_move")
-def on_mouse_move(conn, msg):
-    dx = msg.get("dx", 0)
-    dy = msg.get("dy", 0)
-    move_mouse(dx, dy)
-    return True
-
-
-@handler("mouse_click")
-def on_mouse_click(conn, msg):
-    button = msg.get("button")
-    action = msg.get("action")
-    if button not in ("left", "right", "middle") or action not in ("down", "up", "click"):
-        send_error(conn, "INVALID_PARAMS", "invalid button or action")
-        return True
-    if action == "click":
-        click_mouse(button, "down")
-        click_mouse(button, "up")
-    else:
-        click_mouse(button, action)
-    return True
-
-
-@handler("scroll")
-def on_scroll(conn, msg):
-    delta = msg.get("delta", 0)
-    scroll(delta * 120)
-    return True
-
-
-@handler("text_input")
-def on_text_input(conn, msg):
-    text = msg.get("text", "")
-    if not text:
-        send_error(conn, "INVALID_PARAMS", "text is empty")
-        return True
-    send_text(text)
-    logging.getLogger("OmniPad").info(f"text_input: {text[:40]}{'...' if len(text) > 40 else ''}")
-    return True
-
-
-@handler("keyboard")
-def on_keyboard(conn, msg):
-    key = msg.get("key", "")
-    action = msg.get("action")
-    if not key or action not in ("down", "up", "press"):
-        send_error(conn, "INVALID_PARAMS", "invalid key or action")
-        return True
-    ok = press_key(key, action)
-    if not ok:
-        send_error(conn, "INVALID_PARAMS", f"unknown key: {key}")
-    return True
 
 
 def main():
