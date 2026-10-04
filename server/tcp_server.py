@@ -64,6 +64,7 @@ class TcpServer:
         conn.settimeout(30)
         buffer = b""
         last_message = time.time()
+        should_close = False
         try:
             while self.running:
                 try:
@@ -94,8 +95,15 @@ class TcpServer:
                         send_error(conn, "INVALID_PARAMS", "invalid JSON")
                         continue
                     if not handle_message(conn, msg):
+                        # handler 返回 False 表示要求断开（如 VERSION_MISMATCH）。
+                        # 只跳出内层行循环是不够的：外层 while 会继续 recv 阻塞，
+                        # 连接实际不会关闭，与 docs/protocol.md 的规定不符。
+                        should_close = True
                         break
                     last_message = time.time()
+
+                if should_close:
+                    break
 
                 if time.time() - last_message > IDLE_TIMEOUT:
                     logger.warning(f"client {addr} idle timeout ({IDLE_TIMEOUT}s)")

@@ -1,4 +1,4 @@
-r"""TCP 分帧回归测试。
+r"""tcp_server 回归测试。
 
 验证 UTF-8 多字节字符（如中文，3 字节）被 TCP 分片切开时不会被损坏。
 
@@ -23,6 +23,7 @@ class TcpFramingTest(unittest.TestCase):
     def setUp(self):
         self.received = []
         self.errors = []
+        self.reject = False
 
         self._orig_handle = tcp_server.handle_message
         self._orig_error = tcp_server.send_error
@@ -52,7 +53,7 @@ class TcpFramingTest(unittest.TestCase):
 
     def _fake_handle(self, conn, msg):
         self.received.append(msg)
-        return True
+        return not self.reject
 
     def _fake_error(self, conn, code, message):
         self.errors.append((code, message))
@@ -157,6 +158,28 @@ class TcpFramingTest(unittest.TestCase):
 
         self.assertEqual(self.errors, [])
         self.assertEqual(self.received, [{"type": "heartbeat"}])
+
+    # --- 连接生命周期 ---------------------------------------------------
+
+    def test_handler_returning_false_closes_connection(self):
+        """handler 返回 False（如 VERSION_MISMATCH）必须真正关闭连接。
+
+        docs/protocol.md 规定「若版本不匹配，Server 回复错误并关闭连接」。
+        原实现里的 break 只跳出内层行循环，外层 recv 继续阻塞，连接不会关闭。
+        """
+        self.reject = True
+        payload = json.dumps({"type": "handshake", "version": "9.9"}).encode() + b"\n"
+
+        with socket.create_connection(("127.0.0.1", self.port), timeout=5) as sock:
+            sock.sendall(payload)
+            sock.settimeout(3)
+            try:
+                data = sock.recv(4096)
+            except socket.timeout:
+                self.fail("handler 返回 False 后服务端未关闭连接")
+
+        self.assertEqual(data, b"")
+        self.assertEqual(len(self.received), 1)
 
 
 if __name__ == "__main__":
