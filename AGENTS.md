@@ -45,3 +45,4 @@ OmniPad/
 
 - **未经用户明确命令，只推送（push）不发布（release）**
 - 创建 Release、上传 APK/zip 等发布操作必须等待用户命令
+使用git
