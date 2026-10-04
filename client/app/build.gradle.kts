@@ -1,7 +1,20 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
 }
+
+// 签名身份从 client/keystore.properties 读取，该文件不入库。
+// 密钥与口令绝不能写进 build.gradle.kts —— 那等于把签名身份提交进仓库。
+// 缺少该文件时仍可构建 debug，release 则产出未签名包。
+val keystorePropertiesFile = rootProject.file("keystore.properties")
+val keystoreProperties = Properties().apply {
+    if (keystorePropertiesFile.exists()) {
+        keystorePropertiesFile.inputStream().use { load(it) }
+    }
+}
+val hasSigningConfig = keystoreProperties.getProperty("storeFile") != null
 
 android {
     namespace = "com.omnipad.client"
@@ -16,18 +29,22 @@ android {
     }
 
     signingConfigs {
-        create("release") {
-            storeFile = file("../omnipad-release-key.jks")
-            storePassword = "OmniPad2024"
-            keyAlias = "omnipad"
-            keyPassword = "OmniPad2024"
+        if (hasSigningConfig) {
+            create("release") {
+                storeFile = file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
         }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("release")
+            if (hasSigningConfig) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 
