@@ -50,7 +50,7 @@ fun parseMessage(raw: String): OmniPadMessage? {
     return try {
         val obj = JSONObject(raw)
         when (obj.optString("type")) {
-            "handshake_ack" -> HandshakeAck(raw)
+            "handshake_ack" -> HandshakeAck(obj.optString("version", ""))
             "heartbeat_ack" -> HeartbeatAck(raw)
             "error" -> Error(
                 obj.optString("code", ""),
