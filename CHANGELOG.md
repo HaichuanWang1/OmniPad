@@ -57,8 +57,9 @@
 
 ### 文档与工程
 - 新增 `docs/server-cli.md`：状态文件 schema、控制通道、退出码、数据目录
-- 服务端测试 57 → **255 个用例**（新增 `state` 34、`runtime` 44、`control` 25、
-  `tray` 24、`integration` 28，并扩充了 `tcp_server` / `handlers` / `server_ui`）
+- 服务端测试 57 → **258 个用例**（新增 `state` 34、`runtime` 44、`control` 25、
+  `tray` 24、`integration` 28，并扩充了 `tcp_server` 12、`handlers` 10、
+  `server_ui` 24）
 - `test_integration.py` 起真实的 `server.py` 子进程、走真实 CLI 与真实 socket
   客户端，是「状态可观测」这条需求的最终验收
 - **打包可复现**：固定 `SOURCE_DATE_EPOCH` 与 `PYTHONHASHSEED`（后者不固定时

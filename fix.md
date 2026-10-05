@@ -862,7 +862,7 @@ Windows 原生 ttk 主题会**无视** Treeview 的背景色配置，深色界�
 
 | 项 | 结果 |
 |---|---|
-| 服务端测试 | **255 个全过**（第四轮新增 198：`state` 34 + `runtime` 44 + `control` 25 + `tray` 24 + `integration` 28 + 扩充 43） |
+| 服务端测试 | **258 个全过**（第四轮新增 201：`state` 34 + `runtime` 44 + `control` 25 + `tray` 24 + `integration` 28 + 扩充 46） |
 | 端到端 | 真进程 + 真 CLI + 真 socket：状态文件出现、客户端显示 `online`、错误令牌显示 `rejected(AUTH_FAILED)`、`--stop` 优雅退出 |
 | exe | 两个 exe 均实测可用；`--version` / `--status`（退出码 3）/ `--stop`（退出码 0）/ `--headless` 全部正确 |
 | 可复现 | 连续两次打包 SHA256 完全一致 |
