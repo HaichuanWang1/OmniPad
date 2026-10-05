@@ -68,13 +68,10 @@ android {
         }
     }
 
-    lint {
-        // AGP 8.2.0 的 lint 无法解析 SDK 中形如 android-37.0 的平台目录名，
-        // 会在 lintVitalAnalyzeRelease 抛 NumberFormatException，连带
-        // assembleRelease 整体失败（详见 fix.md 第 22 条）。该门禁在本机
-        // 从未成功运行过，先关掉以解锁发布；根治需要升级 AGP。
-        checkReleaseBuilds = false
-    }
+    // 这里曾经是 lint { checkReleaseBuilds = false }：AGP 8.2.0 的 lint 无法解析
+    // SDK 中形如 android-37.0 的平台目录名，会在 lintVitalAnalyzeRelease 抛
+    // NumberFormatException，连带 assembleRelease 整体失败（fix.md 第 22 条）。
+    // 升级到 AGP 8.13.2 后已根治，门禁恢复默认开启。
 
     buildFeatures {
         compose = true

@@ -180,9 +180,7 @@ pwsh scripts/package.ps1 -BuildExe    # 额外用 PyInstaller 生成 server_ui.e
 zip 的条目时间戳固定，因此同样的源码每次产出**完全相同的字节**，可以靠重新
 构建来核对已发布的包。
 
-> ⚠️ 已知问题：当前 AGP 8.2.0 的 lint 无法解析 SDK 中形如 `android-37.0`
-> 的平台目录名，会导致 `assembleRelease` 在 `lintVitalAnalyzeRelease` 失败。
-> 该门禁已在 `client/app/build.gradle.kts` 中关闭，根治办法见 [fix.md](fix.md)。
+构建工具链：Gradle 8.13 · AGP 8.13.2 · Kotlin 1.9.21 · JDK 17。
 
 ## 性能优化
 
