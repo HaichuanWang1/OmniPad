@@ -1,6 +1,7 @@
 """生成 OmniPad 的图标（纯标准库，无第三方依赖）。
 
-    python scripts/make_icon.py            # 写入 server/assets/omnipad.ico
+    python scripts/make_icon.py              # 写入 server/assets/omnipad.ico
+    python scripts/make_icon.py 别的路径.ico  # 写到别处（测试用）
 
 为什么自己画而不是塞一个二进制进仓库：图标只有几十行代码就能画出来，改配色、
 改尺寸都是一行的事，而且评审时看得见它长什么样。生成结果仍然入库 ——
@@ -127,12 +128,30 @@ def build_ico(sizes=SIZES):
     return directory + entries + b"".join(images)
 
 
-def main():
+def configure_stdio():
+    """标准输出固定 UTF-8 + 降级。
+
+    英文 Windows 上 stdout 默认是 cp1252，打印中文会 UnicodeEncodeError。
+    构建脚本不该因为一句状态输出而失败。
+    """
+    for stream in (sys.stdout, sys.stderr):
+        if stream is None:
+            continue
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError, OSError):
+            pass
+
+
+def main(argv=None):
+    argv = list(sys.argv[1:] if argv is None else argv)
+    configure_stdio()
+    output = argv[0] if argv else OUTPUT
     data = build_ico()
-    os.makedirs(os.path.dirname(OUTPUT), exist_ok=True)
-    with open(OUTPUT, "wb") as f:
+    os.makedirs(os.path.dirname(os.path.abspath(output)), exist_ok=True)
+    with open(output, "wb") as f:
         f.write(data)
-    print(f"已写入 {OUTPUT}（{len(data):,} 字节，{len(SIZES)} 个尺寸）")
+    print(f"已写入 {output}（{len(data):,} 字节，{len(SIZES)} 个尺寸）")
     return 0
 
 

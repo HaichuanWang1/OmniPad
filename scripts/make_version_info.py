@@ -11,6 +11,22 @@ Windows 做大小比较，完整字符串（含 -beta1.9）供人看。
 import sys
 
 
+def configure_stdio():
+    """把标准输出固定成 UTF-8 + 无法编码时降级。
+
+    CI 的英文 Windows runner 上 stdout 的默认编码是 **cp1252**，打印一句中文
+    就会抛 UnicodeEncodeError —— 整个打包流程挂掉，而报错信息本身完全看不出
+    跟中文有关。这是实测踩到的：`Server tests` 的打包步骤就是这么红的。
+    """
+    for stream in (sys.stdout, sys.stderr):
+        if stream is None:
+            continue
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError, OSError):
+            pass
+
+
 def numeric_parts(version):
     """`1.0.0-beta1.9` → `(1, 0, 0, 0)`。
 
@@ -69,6 +85,7 @@ def build(version):
 
 
 def main(argv):
+    configure_stdio()
     if len(argv) != 3:
         print(__doc__)
         return 2

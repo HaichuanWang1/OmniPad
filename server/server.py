@@ -632,18 +632,22 @@ def build_parser():
 
 
 def _configure_stdio():
-    """输出被重定向到管道/文件时改用 UTF-8。
+    """让标准输出在任何 Windows 代码页下都不会因为中文而崩。
 
-    直接显示在终端时不动：终端用的是系统代码页（简中是 cp936），强行改成 UTF-8
-    反而会把中文显示成乱码。但 `--status --json > st.json` 或喂给脚本时，
-    代码页编码就是个惊喜 —— 那些场景下一律 UTF-8。
+    - 输出被重定向到管道/文件时一律 UTF-8：那种场景下代码页编码就是个惊喜，
+      脚本拿到的会是 cp936 或 cp1252 的字节。
+    - 直接显示在终端时保留系统代码页（简中是 cp936，中文正常显示），
+      但把无法编码的字符降级 —— 否则在**英文** Windows 的终端里打印一句中文
+      就会抛 UnicodeEncodeError，而报错信息本身完全看不出跟中文有关。
     """
     for stream in (sys.stdout, sys.stderr):
         if stream is None:
             continue
         try:
-            if not stream.isatty():
-                stream.reconfigure(encoding="utf-8")
+            if stream.isatty():
+                stream.reconfigure(errors="replace")
+            else:
+                stream.reconfigure(encoding="utf-8", errors="replace")
         except (AttributeError, ValueError, OSError):
             pass
 

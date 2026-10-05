@@ -495,6 +495,77 @@ class EphemeralPortTest(unittest.TestCase):
                 self.assertNotEqual(self._start(index).state.bound_port, 0)
 
 
+class BuildScriptTest(unittest.TestCase):
+    """构建脚本必须能在**英文** Windows 上跑。
+
+    CI 的 runner 是英文 Windows，stdout 默认编码是 cp1252 —— 打印一句中文就会
+    抛 UnicodeEncodeError，整个打包流程挂掉，而报错信息本身完全看不出跟中文有关。
+    这是实测踩到的（`Server tests` 的打包步骤就是这么红的），所以用
+    `PYTHONIOENCODING=cp1252` 精确复现那个环境，而不是靠推理。
+    """
+
+    SCRIPTS_DIR = os.path.join(os.path.dirname(SERVER_DIR), "scripts")
+
+    def _run(self, *args, timeout=120):
+        env = dict(os.environ, PYTHONIOENCODING="cp1252")
+        return subprocess.run(
+            [sys.executable, *args], capture_output=True, env=env, timeout=timeout,
+        )
+
+    def _stderr(self, result):
+        return result.stderr.decode("utf-8", "replace")
+
+    def test_make_version_info_survives_cp1252(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output = os.path.join(tmp, "version_info.txt")
+            result = self._run(
+                os.path.join(self.SCRIPTS_DIR, "make_version_info.py"),
+                "1.0.0-beta1.9", output,
+            )
+
+            self.assertEqual(result.returncode, 0, self._stderr(result))
+            with open(output, encoding="utf-8") as f:
+                content = f.read()
+            self.assertIn("1.0.0-beta1.9", content)
+            self.assertIn("VSVersionInfo", content)
+
+    def test_make_version_info_rejects_bad_arguments(self):
+        result = self._run(os.path.join(self.SCRIPTS_DIR, "make_version_info.py"))
+        self.assertEqual(result.returncode, 2)
+
+    def test_make_icon_survives_cp1252(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output = os.path.join(tmp, "icon.ico")
+            result = self._run(
+                os.path.join(self.SCRIPTS_DIR, "make_icon.py"), output,
+            )
+
+            self.assertEqual(result.returncode, 0, self._stderr(result))
+            self.assertTrue(os.path.exists(output))
+
+    def test_committed_icon_matches_the_generator(self):
+        """图标是生成物，不该被手工改过 —— 改了就对不上了。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            output = os.path.join(tmp, "icon.ico")
+            result = self._run(
+                os.path.join(self.SCRIPTS_DIR, "make_icon.py"), output,
+            )
+            self.assertEqual(result.returncode, 0, self._stderr(result))
+
+            committed = os.path.join(SERVER_DIR, "assets", "omnipad.ico")
+            with open(output, "rb") as a, open(committed, "rb") as b:
+                self.assertEqual(
+                    a.read(), b.read(),
+                    "server/assets/omnipad.ico 与 make_icon.py 的产出不一致，"
+                    "请重新生成（python scripts/make_icon.py）",
+                )
+
+    def test_status_output_survives_cp1252(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result = self._run(SERVER_PY, "--status", "--data-dir", tmp)
+            self.assertEqual(result.returncode, EXIT_NOT_RUNNING, self._stderr(result))
+
+
 class GuiAvailabilityTest(unittest.TestCase):
     """CLI 那个 exe 排除了 tkinter，所以它开不了窗口。
 
