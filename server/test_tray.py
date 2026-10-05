@@ -179,12 +179,6 @@ class IconFileTest(unittest.TestCase):
             break
 
 
-class MenuItemsTest(unittest.TestCase):
-    def test_build_menu_items_keeps_order_and_separators(self):
-        items = tray.build_menu_items([(1, "显示"), (2, None), (3, "退出")])
-        self.assertEqual(items, [(1, "显示"), (2, None), (3, "退出")])
-
-
 class StartWithoutIconTest(unittest.TestCase):
     def test_missing_icon_file_is_not_fatal(self):
         icon = tray.TrayIcon(

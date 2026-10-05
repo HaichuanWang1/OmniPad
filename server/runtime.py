@@ -20,9 +20,7 @@ import socket
 import subprocess
 import sys
 import tempfile
-from datetime import datetime
 
-APP_NAME = "OmniPad"
 APP_DIR_NAME = "OmniPad"
 
 ENV_DATA_DIR = "OMNIPAD_DATA_DIR"
@@ -493,7 +491,3 @@ def format_uptime(seconds) -> str:
     hours, rest = divmod(total, 3600)
     minutes, secs = divmod(rest, 60)
     return f"{hours:02d}:{minutes:02d}:{secs:02d}"
-
-
-def now_iso() -> str:
-    return datetime.now().replace(microsecond=0).isoformat()

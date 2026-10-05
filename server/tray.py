@@ -409,11 +409,6 @@ class TrayIcon:
         user32.PostMessageW(hwnd, WM_NULL, 0, 0)
 
 
-def build_menu_items(commands):
-    """`[(id, label), ...]`，label 为 None 表示分隔线。"""
-    return list(commands)
-
-
 def default_icon_path():
     """图标文件的位置：打包后在 `_MEIPASS/assets`，源码运行时在 `server/assets`。"""
     import sys
