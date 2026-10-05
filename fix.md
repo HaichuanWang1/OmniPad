@@ -852,6 +852,31 @@ Windows 原生 ttk 主题会**无视** Treeview 的背景色配置，深色界�
       两次构建差出 1512 字节
 - [x] CI 装 PyInstaller，校验两个 exe 都在包里，并连打两次比对 SHA256
 
+### 🔴 60. 英文 Windows 上打印中文直接崩（CI 抓到的）
+
+**位置**：`scripts/make_version_info.py`、`scripts/make_icon.py`、`server.py` 的 `_configure_stdio`
+
+CI 的 runner 是英文 Windows，stdout 默认编码是 **cp1252**。打印一句中文就抛
+`UnicodeEncodeError` —— 「打包脚本冒烟测试」整步变红，而报错信息本身完全看不出
+跟中文有关：
+
+```
+File "scripts/make_version_info.py", line 78, in main
+  print(f"已写入版本资源 {output}（{version}）")
+UnicodeEncodeError: 'charmap' codec can't encode characters in position 0-6
+```
+
+同一个坑 `server.py` 里也有一半：原来的 `_configure_stdio` **只处理了「非 tty」**，
+也就是说英文 Windows 的终端里跑 `--status` 一样会崩。
+
+- [x] 两个构建脚本固定 UTF-8 + `errors="replace"`
+- [x] `server.py` 改为「tty 保留系统代码页但允许降级，管道一律 UTF-8」
+- [x] 新增 5 个用例（`test_integration.BuildScriptTest`），用
+      `PYTHONIOENCODING=cp1252` 精确复现那个环境 ——
+      这个坑靠推理发现不了，只能靠复现
+- [x] 顺带钉住 `server/assets/omnipad.ico` 与生成脚本一致（图标是生成物）
+- [x] 重新上传发布资产（已发布的 exe 带着这个 bug）
+
 ### 🟡 59. 本轮无法自动化验证的项
 
 - [ ] **托盘菜单点击**：`Shell_NotifyIcon` 的创建/删除、结构体尺寸、图标文件
@@ -862,7 +887,8 @@ Windows 原生 ttk 主题会**无视** Treeview 的背景色配置，深色界�
 
 | 项 | 结果 |
 |---|---|
-| 服务端测试 | **258 个全过**（第四轮新增 201：`state` 34 + `runtime` 44 + `control` 25 + `tray` 24 + `integration` 28 + 扩充 46） |
+| 服务端测试 | **264 个全过**（第四轮新增 207：`state` 34 + `runtime` 44 + `control` 25 + `tray` 24 + `integration` 33 + 扩充 47） |
+| CI | 新增 PyInstaller 打包步骤、发布包内容校验与「连打两次比对 SHA256」的可复现守卫；`PYTHONIOENCODING=cp1252` 的用例复现了英文 Windows 环境 |
 | 端到端 | 真进程 + 真 CLI + 真 socket：状态文件出现、客户端显示 `online`、错误令牌显示 `rejected(AUTH_FAILED)`、`--stop` 优雅退出 |
 | exe | 两个 exe 均实测可用；`--version` / `--status`（退出码 3）/ `--stop`（退出码 0）/ `--headless` 全部正确 |
 | 可复现 | 连续两次打包 SHA256 完全一致 |

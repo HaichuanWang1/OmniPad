@@ -211,12 +211,14 @@ python test_control.py      # 本机控制通道（25）
 python test_tcp_server.py   # 分帧、连接生命周期与断开原因（22）
 python test_handlers.py     # 握手、配对令牌、字段校验（46）
 python test_tray.py         # 托盘图标的 Win32 结构体与图标文件（24）
-python test_server_ui.py    # 界面纯逻辑（35）
-python test_integration.py  # 端到端：真进程 + 真 CLI + 真 socket（28）
+python test_server_ui.py    # 界面纯逻辑（36）
+python test_integration.py  # 端到端：真进程 + 真 CLI + 真 socket + 构建脚本（33）
 ```
 
 全部只依赖标准库。`test_integration.py` 会真的起 `server.py` 子进程，用真实
-命令行与真实客户端去查它 —— 这是「状态可观测」这条需求的最终验收。
+命令行与真实客户端去查它 —— 这是「状态可观测」这条需求的最终验收；其中的
+`BuildScriptTest` 用 `PYTHONIOENCODING=cp1252` 复现英文 Windows 的环境，
+因为「打印中文会崩」这类问题靠推理发现不了。
 
 两个用例组需要真实桌面会话，默认跳过：
 

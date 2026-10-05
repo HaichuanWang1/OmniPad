@@ -53,15 +53,20 @@
 - **第二个实例只留一行日志**：改为命名互斥体 + 明确提示「已被 PID x 占用」
 - **「对端异常断开」与「客户端主动断开」混为一谈**：`ConnectionResetError` 现在
   有自己的原因（`connection_reset`）
+- **英文 Windows 上打印中文会崩**：stdout 默认编码是 cp1252，`--status` 之类的
+  输出会抛 `UnicodeEncodeError`。CI 的打包步骤就是这么红的。现在固定 UTF-8
+  并对无法编码的字符降级（终端保留系统代码页，管道一律 UTF-8）
 - 托盘图标在 Windows 11 上默认被收进「隐藏的图标」（系统行为，README 已说明）
 
 ### 文档与工程
 - 新增 `docs/server-cli.md`：状态文件 schema、控制通道、退出码、数据目录
-- 服务端测试 57 → **258 个用例**（新增 `state` 34、`runtime` 44、`control` 25、
-  `tray` 24、`integration` 28，并扩充了 `tcp_server` 12、`handlers` 10、
-  `server_ui` 24）
+- 服务端测试 57 → **264 个用例**（新增 `state` 34、`runtime` 44、`control` 25、
+  `tray` 24、`integration` 33，并扩充了 `tcp_server` 12、`handlers` 10、
+  `server_ui` 25）
 - `test_integration.py` 起真实的 `server.py` 子进程、走真实 CLI 与真实 socket
-  客户端，是「状态可观测」这条需求的最终验收
+  客户端，是「状态可观测」这条需求的最终验收。其中的 `BuildScriptTest` 用
+  `PYTHONIOENCODING=cp1252` 复现英文 Windows 的环境 ——
+  「打印中文会崩」这个坑靠推理发现不了，只能靠复现
 - **打包可复现**：固定 `SOURCE_DATE_EPOCH` 与 `PYTHONHASHSEED`（后者不固定时
   PyInstaller 归档里的模块顺序会变，两次构建差出一千多字节）。CI 里有
   「连打两次比对 SHA256」的守卫
