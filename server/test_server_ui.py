@@ -291,6 +291,24 @@ class LiveGuiTest(unittest.TestCase):
         # 自检里会跑一次 netstat，这里只确认它不抛异常
         server_ui.port_owner_text(1)
 
+    def test_shutdown_cancels_timers_and_is_idempotent(self):
+        """关闭时必须撤掉定时回调。
+
+        destroy() 之后 Tcl 解释器还在，排队的 after 回调照样会触发，
+        然后去碰已经销毁的控件 —— 会甩出一堆 TclError。
+        """
+        self.app._poll()
+        self.app._tick()
+        self.assertIsNotNone(self.app._poll_id)
+        self.assertIsNotNone(self.app._tick_id)
+
+        self.app._shutdown()
+
+        self.assertTrue(self.app._closing)
+        self.assertIsNone(self.app._poll_id)
+        self.assertIsNone(self.app._tick_id)
+        self.app._shutdown()      # 第二次必须是空操作，不能抛
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

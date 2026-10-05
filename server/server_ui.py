@@ -216,6 +216,8 @@ class ServerApp:
         self.tray = None
         self.tray_available = False
         self._closing = False
+        self._poll_id = None
+        self._tick_id = None
 
         self.root = tk.Tk()
         self.root.title("OmniPad 服务端")
@@ -460,10 +462,13 @@ class ServerApp:
         self.events.put((kind, fields))
 
     def _poll(self):
+        if self._closing:
+            return
+        self._poll_id = None
         self._drain_events()
         self._drain_logs()
         if not self._closing:
-            self.root.after(POLL_INTERVAL_MS, self._poll)
+            self._poll_id = self.root.after(POLL_INTERVAL_MS, self._poll)
 
     def _drain_events(self):
         dirty = False
@@ -532,6 +537,7 @@ class ServerApp:
     def _tick(self):
         if self._closing:
             return
+        self._tick_id = None
         payload = self.session.state.snapshot()
         self.uptime_label.config(
             text=f"运行时间 {runtime.format_uptime(self.session.state.uptime_seconds())}"
@@ -540,7 +546,7 @@ class ServerApp:
         if self.tray is not None and self.tray_available:
             self.tray.update_tooltip(tray_tooltip(payload))
         self._refresh_clients()
-        self.root.after(TICK_INTERVAL_MS, self._tick)
+        self._tick_id = self.root.after(TICK_INTERVAL_MS, self._tick)
 
     def _refresh_header(self):
         addresses = self.session.connect_addresses() or ["127.0.0.1"]
@@ -692,13 +698,31 @@ class ServerApp:
         if self._closing:
             return
         self._closing = True
+
+        # 先撤掉定时回调。destroy() 之后 Tcl 解释器还在，排队的 after 回调照样会
+        # 触发，然后去碰已经销毁的控件 —— 那会甩出一堆 TclError。
+        for attribute in ("_poll_id", "_tick_id"):
+            after_id = getattr(self, attribute, None)
+            if after_id is not None:
+                try:
+                    self.root.after_cancel(after_id)
+                except Exception:
+                    pass
+                setattr(self, attribute, None)
+
+        logger = logging.getLogger("OmniPad")
         try:
             if self.tray is not None:
                 self.tray.stop()
         except Exception:
-            logging.getLogger("OmniPad").exception("关闭托盘失败")
-        self.session.stop()
-        self.root.destroy()
+            logger.exception("关闭托盘失败")
+
+        try:
+            self.session.stop()
+        except Exception:
+            logger.exception("停止服务端失败")
+        finally:
+            self.root.destroy()
 
 
 def _app_version():
