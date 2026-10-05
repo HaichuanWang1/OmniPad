@@ -13,15 +13,25 @@
 
 1. 从 [Releases](https://github.com/HaichuanWang1/OmniPad/releases) 下载最新的
    `omnipad-server-v*.zip` 并解压
-2. 需要 **Python 3.10 或更高版本**（[下载](https://www.python.org/downloads/)），
-   在解压出的目录里执行：
-   ```
-   python server_ui.py
-   ```
+2. **双击 `OmniPad-Server.exe`** —— 不需要安装 Python，也不需要命令行
 3. 记下窗口顶部显示的 **IP 地址**（如 `192.168.x.x`）和 **配对令牌**（8 位，如 `GBGUAWW9`）
 
-> 服务端只依赖 Python 标准库，不需要 `pip install`。
-> 发布包目前不含 `server_ui.exe`；如需单文件可执行程序，见下方「打包发布」。
+> 首次运行 Windows 可能弹出 SmartScreen 提示（本程序没有做代码签名），
+> 点「更多信息 → 仍要运行」即可。
+>
+> Windows 11 默认把新出现的托盘图标收进「隐藏的图标」里，可以拖出来固定。
+> 关闭窗口时会问「最小化到托盘继续运行 / 停止并退出」。
+>
+> 想用命令行的话用同目录下的 `OmniPad-Server-CLI.exe`，详见
+> [docs/server-cli.md](docs/server-cli.md)：
+>
+> ```
+> OmniPad-Server-CLI.exe --status        服务端在不在跑、谁连着
+> OmniPad-Server-CLI.exe --stop          停掉正在运行的实例
+> ```
+>
+> 发布包里也带了源码：装了 Python 3.10+ 的话，`python server.py` 一样能跑，
+> 不需要 `pip install`（服务端只用标准库）。
 
 ### 手机端（Android）
 
@@ -30,7 +40,8 @@
 3. 填入电脑上显示的配对令牌
 4. 点击「连接」
 
-> 配对令牌在电脑端首次启动时随机生成，保存在 `server/pairing_token.txt`。
+> 配对令牌在电脑端首次启动时随机生成，保存在数据目录里
+> （exe 是 `%APPDATA%\OmniPad\pairing_token.txt`，源码运行是 `server/pairing_token.txt`）。
 > 删除该文件即可重新生成（手机端需重新配对）。
 
 ### 使用
@@ -99,22 +110,28 @@ OmniPad/
 ├── VERSION                  # 版本号唯一来源（Gradle 与打包脚本都读它）
 ├── .editorconfig            # 字符集与缩进约定
 ├── docs/                    # 协议文档（唯一接口标准）
-│   ├── protocol.md
-│   └── schema.json
+│   ├── protocol.md          # 手机 ↔ 电脑的通信协议
+│   ├── schema.json          # 协议消息的 JSON Schema
+│   └── server-cli.md        # 服务端命令行、状态文件与控制通道
 ├── scripts/
-│   └── package.ps1          # 打包发布产物到 dist/
+│   ├── package.ps1          # 打包发布产物到 dist/
+│   ├── make_icon.py         # 生成托盘/exe 图标（纯标准库）
+│   └── make_version_info.py # 生成 exe 的版本资源
 ├── server/                  # Python 服务端
-│   ├── server.py            # 无头模式入口
-│   ├── server_ui.py         # Tkinter GUI 控制面板
+│   ├── server.py            # 唯一入口：GUI / 无头 / --status / --stop
+│   ├── server_ui.py         # Tkinter 控制面板
+│   ├── tray.py              # 系统托盘图标（纯 ctypes）
+│   ├── state.py             # 连接状态机与运行状态快照
+│   ├── runtime.py           # 数据目录 / 状态文件 / 单实例 / 日志
+│   ├── control.py           # 本机控制通道（--status / --stop 靠它）
 │   ├── handlers.py          # 协议处理器（两个入口共用，唯一一份）
 │   ├── pairing.py           # 配对令牌的生成与持久化
 │   ├── protocol.py          # 消息分派框架
 │   ├── tcp_server.py        # 多线程 TCP 服务器
 │   ├── input_controller.py  # Windows SendInput 注入
+│   ├── assets/omnipad.ico   # 图标（由 make_icon.py 生成）
 │   ├── test_client.py       # 本地手工联调脚本
-│   ├── test_handlers.py     # 握手、配对令牌、字段校验测试
-│   ├── test_server_ui.py    # 客户端历史淘汰等纯逻辑测试
-│   └── test_tcp_server.py   # 分帧与连接生命周期测试
+│   └── test_*.py            # 单元测试与端到端测试
 └── client/                  # Android 客户端
     └── app/
         ├── proguard-rules.pro   # R8 规则（仅补崩溃堆栈可读性）
@@ -144,7 +161,8 @@ OmniPad/
 
 ## 协议
 
-详见 [docs/protocol.md](docs/protocol.md)
+详见 [docs/protocol.md](docs/protocol.md)。服务端的命令行、状态文件与控制通道
+见 [docs/server-cli.md](docs/server-cli.md)。
 
 ### 消息类型
 
@@ -173,20 +191,39 @@ Server → Client:  {"type":"handshake_ack","version":"1.1"}
 
 ```bash
 cd server
-python server_ui.py        # GUI 模式
-python server.py           # 无头模式
+python server.py           # 图形界面（默认）
+python server.py --headless   # 无头模式
+python server.py --status     # 看看在不在跑、谁连着
+python server.py --stop       # 停掉正在运行的实例
 ```
+
+图形界面里还能看到：连接状态（在线 / 已连接·未配对 / 已拒绝并给出原因 / 已断开
+并给出原因）、端口占用者、本机全部地址、日志文件位置，以及一个「自检」面板。
+关窗口时会问「最小化到托盘继续运行 / 停止并退出」。
 
 ### 运行测试
 
 ```bash
 cd server
-python test_tcp_server.py  # 分帧与连接生命周期（10 个用例）
-python test_handlers.py    # 握手、配对令牌、字段校验（36 个用例）
-python test_server_ui.py   # 客户端历史淘汰等纯逻辑（11 个用例）
+python test_state.py        # 连接状态机与状态快照（34）
+python test_runtime.py      # 数据目录、单实例、原子写、日志（44）
+python test_control.py      # 本机控制通道（25）
+python test_tcp_server.py   # 分帧、连接生命周期与断开原因（22）
+python test_handlers.py     # 握手、配对令牌、字段校验（46）
+python test_tray.py         # 托盘图标的 Win32 结构体与图标文件（24）
+python test_server_ui.py    # 界面纯逻辑（35）
+python test_integration.py  # 端到端：真进程 + 真 CLI + 真 socket（28）
 ```
 
-三个测试文件都只依赖标准库。
+全部只依赖标准库。`test_integration.py` 会真的起 `server.py` 子进程，用真实
+命令行与真实客户端去查它 —— 这是「状态可观测」这条需求的最终验收。
+
+两个用例组需要真实桌面会话，默认跳过：
+
+```powershell
+$env:OMNIPAD_GUI_TEST='1';  python test_server_ui.py   # 真的把窗口搭起来
+$env:OMNIPAD_TRAY_TEST='1'; python test_tray.py        # 真的把图标放进通知区域
+```
 
 ### 构建客户端
 
@@ -211,14 +248,21 @@ cd client
 pwsh scripts/package.ps1              # 服务端 zip + 客户端 apk
 pwsh scripts/package.ps1 -Target server
 pwsh scripts/package.ps1 -Target client
-pwsh scripts/package.ps1 -BuildExe    # 额外用 PyInstaller 生成 server_ui.exe
+pwsh scripts/package.ps1 -Target server -SkipExe   # 跳过 exe，快速迭代用
 ```
 
-产物按发布规范命名后写入 `dist/`（不入库），脚本会打印 SHA256 供发布说明使用。
-zip 的条目时间戳固定，因此同样的源码每次产出**完全相同的字节**，可以靠重新
-构建来核对已发布的包。
+服务端 zip 里有两个 exe：`OmniPad-Server.exe`（图形子系统，双击即用）与
+`OmniPad-Server-CLI.exe`（控制台子系统，脚本用）。**默认就会构建它们** ——
+exe 才是普通用户实际拿到的东西，把它排除在默认路径之外，等于发布流程里最关键
+的一步从来没被验证过。需要 `python -m pip install pyinstaller`。
 
-构建工具链：Gradle 8.13 · AGP 8.13.2 · Kotlin 1.9.21 · JDK 17。
+产物按发布规范命名后写入 `dist/`（不入库），脚本会打印 SHA256 供发布说明使用。
+**打包是可复现的**：zip 的条目时间戳固定为 2000-01-01，PyInstaller 也固定了
+`SOURCE_DATE_EPOCH` 与 `PYTHONHASHSEED`（后者不固定时，模块在归档里的顺序会变，
+两次构建能差出一千多字节）。同样的源码两次打包产出**完全相同的字节**，
+可以靠重新构建来核对已发布的包。CI 里有这一步的守卫。
+
+构建工具链：Gradle 8.13 · AGP 8.13.2 · Kotlin 1.9.21 · JDK 17 · PyInstaller 6.x。
 
 ## 性能
 

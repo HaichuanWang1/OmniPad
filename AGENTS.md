@@ -11,23 +11,28 @@ OmniPad/
 ├── .editorconfig           # 字符集与缩进约定
 ├── fix.md                  # 待办修复清单
 ├── docs/                   # 共享协议文档（唯一接口标准）
-│   ├── protocol.md
-│   └── schema.json
+│   ├── protocol.md         # 手机 ↔ 电脑的通信协议
+│   ├── schema.json         # 协议消息的 JSON Schema
+│   └── server-cli.md       # 服务端命令行、状态文件与控制通道（本机接口，非协议）
 ├── scripts/
-│   └── package.ps1         # 打包发布产物到 dist/
+│   ├── package.ps1         # 打包发布产物到 dist/
+│   ├── make_icon.py        # 生成托盘/exe 图标（纯标准库）
+│   └── make_version_info.py # 生成 exe 的版本资源
 ├── server/                 # Python 电脑端（TCP 服务端）
-│   ├── server.py           # 无头模式入口
-│   ├── server_ui.py        # Tkinter GUI 入口
+│   ├── server.py           # 唯一入口：GUI / 无头 / --status / --stop
+│   ├── server_ui.py        # Tkinter 控制面板
+│   ├── tray.py             # 系统托盘图标（纯 ctypes）
+│   ├── state.py            # 连接状态机与运行状态快照（状态的唯一数据源）
+│   ├── runtime.py          # 数据目录 / 状态文件 / 单实例 / 日志 / 端口占用
+│   ├── control.py          # 本机控制通道（--status / --stop 靠它）
 │   ├── handlers.py         # 协议处理器（两个入口共用，唯一一份）
 │   ├── pairing.py          # 配对令牌的生成与持久化
 │   ├── protocol.py         # 消息分派与发送
 │   ├── tcp_server.py       # 多线程 TCP 服务器
 │   ├── input_controller.py # Windows SendInput 注入
+│   ├── assets/omnipad.ico  # 图标（由 make_icon.py 生成，不要手工编辑）
 │   ├── test_client.py      # 手工联调脚本
-│   ├── test_handlers.py    # 握手、配对令牌、字段校验测试
-│   ├── test_server_ui.py   # 客户端历史淘汰等纯逻辑测试
-│   ├── test_tcp_server.py  # 分帧与连接生命周期测试
-│   └── requirements.txt
+│   └── test_*.py           # 单元测试与端到端测试
 ├── client/                 # Kotlin 手机端（TCP 客户端）
 │   └── app/src/
 │       ├── main/java/com/omnipad/client/
@@ -82,7 +87,27 @@ OmniPad/
 - 版本号只在仓库根目录 `VERSION` 里改一处，Gradle 与打包脚本都会跟着走
 - 服务端发布包内容由 `scripts/package.ps1` 的白名单决定；新增运行时模块
   必须同步加进该白名单，否则脚本会拒绝打包
+- 服务端包默认包含两个 exe，**不要**为了「快一点」在发布时用 `-SkipExe`：
+  - `OmniPad-Server.exe` 图形子系统，普通用户双击用的就是它
+  - `OmniPad-Server-CLI.exe` 控制台子系统，`--status` / `--stop` 等命令行专用
+  - 为什么是两个：Windows 的子系统标志二选一，图形子系统不会被
+    cmd / PowerShell 等待（管道拿不到输出），控制台子系统会弹黑框
+- 打包必须保持**可复现**：`SOURCE_DATE_EPOCH` 与 `PYTHONHASHSEED` 都要固定。
+  后者不固定时 PyInstaller 归档里的模块顺序会变，两次构建差出一千多字节。
+  CI 里有「连打两次比对 SHA256」的守卫
 - 提交信息使用约定式提交：`fix(server):` / `fix(client):` / `docs:` / `chore:`
+
+## 服务端状态约束
+
+服务端的运行状态**只能有一个数据源**：`server/state.py` 的 `ServerState`。
+状态文件、图形界面表格、`--status` 输出都从它取数。
+
+- 新增「谁连着 / 连得怎么样」的信息时，加到 `ClientRecord` 与 `state.py` 的
+  状态流转里，不要在各个界面里各算一份 —— 那正是改造前「界面说在线、
+  实际连握手都没过」的成因
+- 新增断开原因时，`tcp_server.REASON_*` 与 `state.DISCONNECT_REASON_TEXT`
+  必须同时加（有测试盯着）
+- 不要在界面线程之外碰 Tk 对象：工作线程只往队列里塞东西，由主线程消费
 
 ## 其他约束
 

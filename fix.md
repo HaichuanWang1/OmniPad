@@ -351,9 +351,11 @@ beta1.6 是异类（7 个版本里 5 个遵循约定）。约定已写进 `AGENT
 但 4 个已发布 zip 里的 `.exe` 数量都是 **0**。照 README 走的用户必然扑空。
 
 - [x] README 改为「需要 Python 3.10+，在解压目录执行 `python server_ui.py`」
-- [x] `scripts/package.ps1 -BuildExe` 可选用 PyInstaller 生成 exe
+- [x] `scripts/package.ps1` 可选用 PyInstaller 生成 exe
       （默认关闭：体积大、未签名会触发 SmartScreen，且多数用户已有 Python）
-- [ ] 若确实要发 exe，需把 PyInstaller 纳入发布流程并接受 SmartScreen 警告
+- [x] **已发 exe**（第四轮第 58 条）：改为默认构建，两个 exe
+      （图形子系统 + 控制台子系统），并接受 SmartScreen 警告 ——
+      让普通用户先装 Python 再敲命令行，是把门槛放在了最前面
 
 ---
 
@@ -699,8 +701,6 @@ mouse_click left click             ← 此刻电脑上 Ctrl 已抬起 → Ctrl+�
 
 仍未完成：
 
-- 第 25 条：若要发 `server_ui.exe`，需把 PyInstaller 纳入发布流程。
-  当前选择不发：exe 体积大、未签名会触发 SmartScreen，且服务端只用标准库
 - 第 30 条：配对令牌明文传输。纯 TCP 无 TLS，局域网内可嗅探；Tailscale 内因
   WireGuard 加密而安全。需要时再上 TLS
 - 第 31 条：为 beta1.4 补 tag（可选，该版本从未发布）
@@ -718,3 +718,154 @@ mouse_click left click             ← 此刻电脑上 Ctrl 已抬起 → Ctrl+�
   （APK 5.06 MB → 1.10 MB）、`server_ui.py` 测试
 - 版本号递增到 `v1.0.0-beta1.7`：main 与 beta1.6 协议不兼容，继续沿用 beta1.6
   会让打包脚本产出与线上同名却不兼容的资产
+
+---
+
+## 第四轮：服务端状态可观测 + 打包 exe
+
+**触发**：用户要求「不要让它状态未知，最好打包成 exe」。
+**约束**：不动协议 —— `docs/protocol.md`、`schema.json` 与客户端一行未改。
+
+导火索是一次真实的误判：我告诉用户「当前无客户端连接」，而实际上有个 12:17 起的
+无头服务端还挂在 5800 上，手机正连着它。没有任何地方能查到这件事。
+
+### 🔴 48. 状态只活在窗口里，进程一退就查不到
+
+**位置**：`server.py` 全部、`server_ui.py:104`
+
+无头模式的状态只有 stdout，GUI 的状态只有窗口。想回答「刚才在跑吗、谁连着、
+为什么断了」，只能靠 `netstat` 找端口占用者、靠进程列表猜。
+
+- [x] 新增 `server/state.py`：`ServerState` + `ClientRecord`，是运行状态的**唯一数据源**。
+      状态文件、GUI 表格、`--status` 输出都从它取数
+- [x] 新增 `server/runtime.py`：数据目录、状态文件原子写、单实例、日志轮转、
+      端口占用查询、本机地址枚举
+- [x] 新增 `server/control.py`：只绑回环的控制通道，让状态可以被「问」而不是靠猜
+- [x] 新增 `docs/server-cli.md` 记录这套本机接口
+
+### 🔴 49. 界面上的「在线」是假的
+
+**位置**：`server_ui.py:85-93`（原 `_handle_client`）
+
+`ClientInfo.status` 在**握手之前**就被置成 `connected`。没通过令牌校验的连接
+在界面上和正常连接一模一样 —— 用户看到「在线」，实际根本用不了。
+
+- [x] 状态流转改为 `connecting → online | rejected`，断开后 `offline`
+- [x] `protocol.Connection` + `emit` 事件钩子（对既有调用方零侵入：
+      没有 `emit` 的假对象会被安静跳过，`test_handlers.py` 一个字没改）
+- [x] 握手结果上报 `handshake_ok` / `handshake_rejected`（带错误码）
+- [x] 断开原因细分：`client_closed` / `connection_reset` / `idle_timeout` /
+      `rejected` / `server_stopped` / `error`
+- [x] 真机验证：表格同时显示「在线」与「已拒绝（配对令牌错误）」两行
+
+### 🔴 50. 令牌会在每次启动时重新生成（打包成 exe 后）
+
+**位置**：`pairing.py:16-18`（原 `DEFAULT_TOKEN_FILE`）
+
+令牌文件按 `__file__` 定位。onefile exe 的 `__file__` 指向启动时解包、
+退出即删的临时目录 —— 照旧写在那里，每次启动都会换一个令牌，用户每次都要
+重新配对。这是打包 exe 的**硬阻塞**。
+
+- [x] 数据目录改为 `--data-dir` > `OMNIPAD_DATA_DIR` > `%APPDATA%\OmniPad`（exe）
+      / `server/`（源码运行）
+- [x] 令牌迁移：exe 首次启动时若数据目录没有令牌、而同目录有，则直接沿用
+
+### 🔴 51. `--port 0` 的端口回填竞态
+
+**位置**：`server.py` 的 `ServerSession.start()`（原写法）
+
+原来等 `self.tcp.server is not None`，而那个字段在 `bind()` **之前**就被赋值了。
+窗口极小但真实存在：`getsockname()` 返回 `('0.0.0.0', 0)`，于是 `0` 被写进
+状态文件，而且再也不会重读。集成测试第一次跑就中了 3/23。
+
+- [x] `TcpServer.ready` 事件在 `bind + listen` 之后才置位；失败时也置位，
+      让等待方去读 `start_error` 而不是傻等超时
+- [x] 回归用例连跑 8 次连续启动
+
+### 🔴 52. 进程存活检测不能用 `os.kill(pid, 0)`
+
+Windows 上 `os.kill` 没有信号语义，它会直接 `TerminateProcess` ——
+拿它做存活检测等于「查询状态顺便把服务端杀了」。
+
+- [x] 改用 `OpenProcess(SYNCHRONIZE)` + `WaitForSingleObject(handle, 0)`；
+      打不开时区分 `ERROR_ACCESS_DENIED`（存在但受保护）与真的不存在
+- [x] 回归用例：检测一个真实存活的子进程之后，确认它还活着
+
+### 🟠 53. 第二个实例只留一行日志
+
+**位置**：`server.py:44-46`、`server_ui.py:305-310`
+
+第二个实例启动失败时只在日志里写 `failed to start server`，GUI 上表现为
+「启动按钮弹回来」，用户完全不知道端口被谁占了。
+
+- [x] 命名互斥体单实例（进程无论怎么退出都由内核释放，不留需要人工清理的锁文件），
+      锁名按数据目录区分 —— 测试用临时目录、用户用真实目录，互不干扰
+- [x] 第二个实例明确报出「已在运行（PID x，端口 y）」并给出 `--stop` 提示，
+      退出码 2；GUI 模式下弹窗问「停止它并接管 / 退出」
+- [x] 启动前检查端口占用并**指出占用者的 PID**
+
+### 🟠 54. Tkinter 线程安全
+
+**位置**：`server_ui.py:288-289`（原 `on_change`）
+
+客户端线程直接调 `self.root.after(0, ...)`。Tkinter 不是线程安全的。
+
+- [x] 连接事件与托盘回调只往队列里塞东西，全部界面更新在主线程的轮询里消费
+
+### 🟠 55. 日志面板只增不减
+
+**位置**：`server_ui.py:375-386`（原 `_append_log`）
+
+Tk 的 Text 控件不会自己丢旧行，跑一整天就是几十兆内存。
+
+- [x] `LogBuffer` 环形缓冲，保留最近 2000 行
+- [x] 日志同时落盘 `logs\server.log`（1 MB × 3 轮转）
+
+### 🟠 56. 状态栏被日志区挤成一条缝
+
+Tk 的 packer 按**打包顺序**分配空间，日志区 `expand=True` 又排在状态栏前面，
+状态栏只剩下几个像素、文字全被裁掉，界面上看不出有这一栏。
+
+- [x] 状态栏先打包；live GUI 测试钉住这一条
+
+### 🟠 57. 客户端表格是一块白板
+
+Windows 原生 ttk 主题会**无视** Treeview 的背景色配置，深色界面里就是一块刺眼的白板。
+
+- [x] 切到 `clam` 主题（同时让 `ttk.Scrollbar` 也认配色）
+
+### 🟡 58. 打包成 exe（第 25 条的正解）
+
+- [x] `scripts/package.ps1` 默认构建两个 exe：
+      `OmniPad-Server.exe`（图形子系统，双击即用）与
+      `OmniPad-Server-CLI.exe`（控制台子系统，命令行专用）
+- [x] 为什么不合成一个：Windows 的子系统标志二选一。图形子系统的程序，
+      PowerShell / cmd 不等待它结束，`--status --json | ConvertFrom-Json`
+      拿到的是空。试过「控制台子系统 + 按 `GetConsoleProcessList` 判断要不要
+      隐藏黑框」，本机实测不可靠（资源管理器双击给的是 2 而不是 1）；
+      靠父进程名判断又会被 PyInstaller onefile 的自我重启挡住
+- [x] 图标由 `scripts/make_icon.py` 生成（纯标准库 PNG→ICO，4 倍超采样，
+      按 alpha 预乘避免边缘渗出黑边）
+- [x] exe 版本资源由 `scripts/make_version_info.py` 从 `VERSION` 生成
+- [x] **打包可复现**：固定 `SOURCE_DATE_EPOCH` 与 `PYTHONHASHSEED`。
+      后者是实测发现的 —— 不固定时 PyInstaller 归档里的模块顺序会变，
+      两次构建差出 1512 字节
+- [x] CI 装 PyInstaller，校验两个 exe 都在包里，并连打两次比对 SHA256
+
+### 🟡 59. 本轮无法自动化验证的项
+
+- [ ] **托盘菜单点击**：`Shell_NotifyIcon` 的创建/删除、结构体尺寸、图标文件
+      格式都有测试，但「右键弹出的菜单项真的能点」需要人工确认
+- [ ] Windows 11 会把新托盘图标收进「隐藏的图标」里（系统行为，非缺陷）
+
+### 验证记录（第四轮）
+
+| 项 | 结果 |
+|---|---|
+| 服务端测试 | **255 个全过**（第四轮新增 198：`state` 34 + `runtime` 44 + `control` 25 + `tray` 24 + `integration` 28 + 扩充 43） |
+| 端到端 | 真进程 + 真 CLI + 真 socket：状态文件出现、客户端显示 `online`、错误令牌显示 `rejected(AUTH_FAILED)`、`--stop` 优雅退出 |
+| exe | 两个 exe 均实测可用；`--version` / `--status`（退出码 3）/ `--stop`（退出码 0）/ `--headless` 全部正确 |
+| 可复现 | 连续两次打包 SHA256 完全一致 |
+| 时延 | exe 从进程启动到状态文件可用 0.33 s；单次 `--status` 1.02 s（onefile 解包占大头） |
+| GUI | 截图核对：在线/已拒绝两行状态、状态栏、深色滚动条、日志配色、托盘图标在通知区域显示正常 |
+| 协议 | `docs/` 与客户端**零改动** |
