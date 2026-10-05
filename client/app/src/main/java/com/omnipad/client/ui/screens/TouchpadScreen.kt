@@ -4,8 +4,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
 import kotlinx.coroutines.withTimeoutOrNull
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -50,6 +48,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.ImeAction
@@ -62,6 +61,17 @@ import com.omnipad.client.network.Scroll
 import com.omnipad.client.network.TextInput
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.sqrt
+
+/** 双指纵向位移换算成滚轮格数的除数。 */
+private const val SCROLL_DIVISOR = 3f
+
+/**
+ * 触摸板的手势阶段。
+ *
+ * 全部由同一个 `pointerInput` 状态机驱动：判定阶段先决定这次触摸属于哪一类，
+ * 执行阶段只做对应的事。这样各手势之间不会互相抢事件。
+ */
+private enum class TouchMode { TAP, LONG_PRESS, DRAG, SCROLL }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -344,51 +354,99 @@ fun TouchpadScreen(
                         },
                         shape = MaterialTheme.shapes.large,
                     )
-                    .pointerInput(Unit) {
-                        detectTapGestures(
-                            onTap = {
-                                onSendMessage(MouseClick("left", "click"))
-                            },
-                            onLongPress = {
-                                onSendMessage(MouseClick("right", "click"))
-                            },
-                        )
-                    }
-                    .pointerInput(Unit) {
-                        detectDragGestures(
-                            onDragStart = { isPressed = true },
-                            onDragEnd = { isPressed = false },
-                            onDragCancel = { isPressed = false },
-                            onDrag = { change, dragAmount ->
-                                change.consume()
-                                dragAccumX.addAndGet(dragAmount.x.toInt())
-                                dragAccumY.addAndGet(dragAmount.y.toInt())
-                            },
-                        )
-                    }
+                    // 单一手势状态机：点击 / 长按 / 拖动 / 双指滚动都在这里判定。
+                    // 原先三个独立的 pointerInput 会互相抢事件，「拖动被点击吃掉」
+                    // 「双指滚动误触发」都是这么来的。
                     .pointerInput(Unit) {
                         awaitEachGesture {
-                            val first = awaitFirstDown(requireUnconsumed = false)
-                            val secondFinger: Any? = withTimeoutOrNull(80L) {
-                                var event = awaitPointerEvent()
-                                while (event.changes.count { it.pressed } < 2) {
-                                    event = awaitPointerEvent()
-                                }
-                                true
-                            }
-                            if (secondFinger != null) {
-                                var lastY = first.position.y
-                                while (true) {
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            // 用平台阈值，尊重系统的无障碍与手感设置
+                            val longPressTimeout = viewConfiguration.longPressTimeoutMillis
+                            val touchSlop = viewConfiguration.touchSlop
+
+                            // null 表示还没判定出来
+                            var decided: TouchMode? = null
+                            var lastPos = down.position
+                            var accumulated = Offset.Zero
+                            var scrollLastY = 0f
+
+                            // 判定阶段：静置超时即长按；否则等移动超阈值或第二根手指。
+                            withTimeoutOrNull(longPressTimeout) {
+                                while (decided == null) {
                                     val event = awaitPointerEvent()
                                     val pressed = event.changes.filter { it.pressed }
-                                    if (pressed.size < 2) break
-                                    val avgY = pressed.map { it.position.y }.average().toFloat()
-                                    val delta = ((lastY - avgY) / 3).toInt()
-                                    if (delta != 0) {
-                                        scrollAccum.addAndGet(delta)
+                                    when {
+                                        pressed.isEmpty() -> decided = TouchMode.TAP
+
+                                        pressed.size >= 2 -> {
+                                            decided = TouchMode.SCROLL
+                                            scrollLastY = pressed
+                                                .map { it.position.y }.average().toFloat()
+                                        }
+
+                                        else -> {
+                                            val change = event.changes
+                                                .firstOrNull { it.id == down.id }
+                                                ?: pressed.first()
+                                            accumulated += change.position - lastPos
+                                            lastPos = change.position
+                                            if (accumulated.getDistance() > touchSlop) {
+                                                decided = TouchMode.DRAG
+                                            }
+                                        }
                                     }
-                                    lastY = avgY
-                                    pressed.forEach { it.consume() }
+                                }
+                            }
+                            // 静置超过长按阈值，判定为长按
+                            val mode = decided ?: TouchMode.LONG_PRESS
+
+                            // 执行阶段：只做判定结果对应的那一件事。
+                            when (mode) {
+                                TouchMode.TAP ->
+                                    onSendMessage(MouseClick("left", "click"))
+
+                                TouchMode.LONG_PRESS -> {
+                                    onSendMessage(MouseClick("right", "click"))
+                                    // 吃掉后续事件直到抬起，避免抬手时又被判成点击
+                                    while (true) {
+                                        val event = awaitPointerEvent()
+                                        if (event.changes.none { it.pressed }) break
+                                    }
+                                }
+
+                                TouchMode.DRAG -> {
+                                    isPressed = true
+                                    // 判定阶段已经积累的位移不能丢
+                                    if (accumulated != Offset.Zero) {
+                                        dragAccumX.addAndGet(accumulated.x.toInt())
+                                        dragAccumY.addAndGet(accumulated.y.toInt())
+                                    }
+                                    while (true) {
+                                        val event = awaitPointerEvent()
+                                        val change = event.changes
+                                            .firstOrNull { it.id == down.id }
+                                        if (change == null || !change.pressed) break
+                                        val delta = change.position - lastPos
+                                        lastPos = change.position
+                                        dragAccumX.addAndGet(delta.x.toInt())
+                                        dragAccumY.addAndGet(delta.y.toInt())
+                                        change.consume()
+                                    }
+                                    isPressed = false
+                                }
+
+                                TouchMode.SCROLL -> {
+                                    while (true) {
+                                        val event = awaitPointerEvent()
+                                        val pressed = event.changes.filter { it.pressed }
+                                        if (pressed.size < 2) break
+                                        val avgY = pressed
+                                            .map { it.position.y }.average().toFloat()
+                                        val delta = ((scrollLastY - avgY) / SCROLL_DIVISOR).toInt()
+                                        if (delta != 0) scrollAccum.addAndGet(delta)
+                                        scrollLastY = avgY
+                                        pressed.forEach { it.consume() }
+                                    }
                                 }
                             }
                         }
