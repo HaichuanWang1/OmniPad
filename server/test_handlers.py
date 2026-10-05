@@ -102,6 +102,121 @@ class HandshakeTokenTest(unittest.TestCase):
         self.assertEqual(resp["type"], "handshake_ack")
 
 
+class HandshakeEventTest(unittest.TestCase):
+    """握手结果必须上报给服务端。
+
+    界面要显示的是「为什么连不上」——「配对令牌错误」还是「协议版本不匹配」，
+    而不是干巴巴一句「已断开」。改造前这些信息在 handlers 里被丢掉了。
+    """
+
+    TOKEN = "K7M2P9QR"
+
+    class EmittingConn(FakeConn):
+        def __init__(self):
+            super().__init__()
+            self.events = []
+
+        def emit(self, kind, **fields):
+            self.events.append((kind, fields))
+
+    def setUp(self):
+        self.conn = self.EmittingConn()
+        self._orig = handlers.get_pairing_token()
+        handlers.set_pairing_token(self.TOKEN)
+
+    def tearDown(self):
+        handlers.set_pairing_token(self._orig)
+
+    def _kinds(self):
+        return [kind for kind, _ in self.conn.events]
+
+    def _handshake(self, version=None, token=None):
+        handlers.on_handshake(self.conn, {
+            "type": "handshake",
+            "version": version or handlers.PROTOCOL_VERSION,
+            "token": self.TOKEN if token is None else token,
+        })
+
+    def test_success_emits_handshake_ok(self):
+        self._handshake()
+        self.assertEqual(self._kinds(), ["handshake_ok"])
+
+    def test_wrong_token_emits_the_code(self):
+        self._handshake(token="WRONG123")
+        self.assertEqual(self._kinds()[0], "handshake_rejected")
+        self.assertEqual(self.conn.events[0][1]["code"], "AUTH_FAILED")
+
+    def test_version_mismatch_emits_its_own_code(self):
+        self._handshake(version="9.9")
+        self.assertEqual(self._kinds()[0], "handshake_rejected")
+        self.assertEqual(self.conn.events[0][1]["code"], "VERSION_MISMATCH")
+
+    def test_rejection_is_reported_before_the_error_reply(self):
+        """顺序有意义：状态机先记下「被拒」，再记「回了一个错误」。"""
+        self._handshake(token="WRONG123")
+        self.assertEqual(self._kinds()[:2], ["handshake_rejected", "error"])
+
+    def test_rejected_handshake_never_emits_ok(self):
+        for kwargs in ({"token": "WRONG123"}, {"version": "9.9"}):
+            with self.subTest(**kwargs):
+                self.conn.events.clear()
+                self._handshake(**kwargs)
+                self.assertNotIn("handshake_ok", self._kinds())
+
+
+class ProtocolEventTest(unittest.TestCase):
+    """protocol.handle_message 层的通用事件。"""
+
+    class EmittingConn(FakeConn):
+        def __init__(self):
+            super().__init__()
+            self.events = []
+
+        def emit(self, kind, **fields):
+            self.events.append((kind, fields))
+
+    def setUp(self):
+        self.conn = self.EmittingConn()
+        self._orig_token = handlers.get_pairing_token()
+        handlers.set_pairing_token(None)
+
+    def tearDown(self):
+        handlers.set_pairing_token(self._orig_token)
+
+    def test_every_valid_message_is_reported(self):
+        protocol.handle_message(self.conn, {"type": "heartbeat"})
+        self.assertEqual(self.conn.events, [("message", {"type": "heartbeat"})])
+
+    def test_malformed_message_is_not_reported_as_a_message(self):
+        """字段校验没过就不算「收到一条合法消息」—— 否则「最后活动时间」
+        会被一堆打错字段名的包刷新，看起来客户端一直在动，实际什么都没发生。"""
+        protocol.handle_message(self.conn, {"type": "heartbeat", "seq": 1})
+        self.assertNotIn("message", [kind for kind, _ in self.conn.events])
+
+    def test_unknown_type_emits_an_error_event(self):
+        protocol.handle_message(self.conn, {"type": "nope"})
+        self.assertEqual(self.conn.events[0][0], "error")
+        self.assertEqual(self.conn.events[0][1]["code"], "UNKNOWN_TYPE")
+
+    def test_plain_fake_conn_without_emit_still_works(self):
+        """零侵入回归：既有测试里的 FakeConn 只有 sendall，事件钩子必须安静跳过。"""
+        conn = FakeConn()
+        protocol.handle_message(conn, {"type": "heartbeat"})
+        self.assertEqual(conn.sent, [{"type": "heartbeat_ack"}])
+
+    def test_raw_socket_like_object_is_also_safe(self):
+        class RawSocketLike:
+            def __init__(self):
+                self.sent = []
+
+            def sendall(self, data):
+                self.sent.append(data)
+
+        conn = RawSocketLike()
+        protocol.handle_message(conn, {"type": "nope"})
+        self.assertEqual(len(conn.sent), 1)
+
+
 class PairingTest(unittest.TestCase):
     def test_generated_token_shape(self):
         for _ in range(50):

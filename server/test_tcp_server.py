@@ -30,6 +30,7 @@ class _ServerTestCase(unittest.TestCase):
     def setUp(self):
         self.received = []
         self.errors = []
+        self.events = []
         self.reject = False
 
         self._orig_handle = tcp_server.handle_message
@@ -38,7 +39,8 @@ class _ServerTestCase(unittest.TestCase):
         tcp_server.send_error = self._fake_error
 
         self.server = tcp_server.TcpServer(
-            host="127.0.0.1", port=0, idle_timeout=self.IDLE_TIMEOUT
+            host="127.0.0.1", port=0, idle_timeout=self.IDLE_TIMEOUT,
+            on_event=self._on_event,
         )
         threading.Thread(target=self.server.start, daemon=True).start()
 
@@ -67,6 +69,12 @@ class _ServerTestCase(unittest.TestCase):
     def _fake_error(self, conn, code, message):
         self.errors.append((code, message))
         return True
+
+    def _on_event(self, kind, **fields):
+        self.events.append((kind, fields))
+
+    def _events_of(self, kind):
+        return [fields for name, fields in self.events if name == kind]
 
     def _send(self, payload, chunk_size):
         """把 payload 按 chunk_size 字节切片后逐片发送。"""
@@ -226,6 +234,134 @@ class ConnectionLifecycleTest(_ServerTestCase):
                 time.sleep(self.IDLE_TIMEOUT / 3)
             # 连接仍然活着：服务端没有关闭它，且我们收到了全部心跳
             self.assertGreater(len(self.received), 2)
+
+
+class ConnectionEventTest(_ServerTestCase):
+    """连接事件与断开原因。
+
+    改造前 tcp_server 只记「连接建立了 / 连接没了」，界面只能靠这个猜状态 ——
+    猜出来的「在线」是假的（那条连接连握手都没过）。现在每条连接都带原因上报，
+    界面与状态文件据此才能说清「为什么断了」。
+    """
+
+    IDLE_TIMEOUT = 1
+
+    def test_connected_event_carries_the_peer(self):
+        with socket.create_connection(("127.0.0.1", self.port), timeout=5):
+            self.assertTrue(self._wait_for(lambda: bool(self._events_of("connected"))))
+
+        events = self._events_of("connected")
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["peer"], "127.0.0.1")
+        self.assertEqual(events[0]["addr"], f"127.0.0.1:{events[0]['port']}")
+
+    def test_client_close_reports_client_closed(self):
+        with socket.create_connection(("127.0.0.1", self.port), timeout=5):
+            self._wait_for(lambda: bool(self._events_of("connected")))
+
+        self.assertTrue(self._wait_for(lambda: bool(self._events_of("disconnected"))))
+        self.assertEqual(
+            self._events_of("disconnected")[0]["reason"], tcp_server.REASON_CLIENT_CLOSED
+        )
+
+    def test_idle_timeout_reports_its_own_reason(self):
+        with socket.create_connection(("127.0.0.1", self.port), timeout=5):
+            self.assertTrue(
+                self._wait_for(
+                    lambda: bool(self._events_of("disconnected")),
+                    timeout=self.IDLE_TIMEOUT + 5,
+                )
+            )
+        self.assertEqual(
+            self._events_of("disconnected")[0]["reason"], tcp_server.REASON_IDLE_TIMEOUT
+        )
+
+    def test_rejected_handshake_reports_rejected(self):
+        self.reject = True
+        with socket.create_connection(("127.0.0.1", self.port), timeout=5) as sock:
+            sock.sendall(b'{"type":"handshake"}\n')
+            self.assertTrue(self._wait_for(lambda: bool(self._events_of("disconnected"))))
+
+        self.assertEqual(
+            self._events_of("disconnected")[0]["reason"], tcp_server.REASON_REJECTED
+        )
+
+    def test_server_stop_reports_server_stopped(self):
+        """stop() 会 shutdown 掉所有连接，recv 抛的是 OSError —— 那不是「连接出错」。"""
+        with socket.create_connection(("127.0.0.1", self.port), timeout=5):
+            self._wait_for(lambda: bool(self._events_of("connected")))
+            self.server.stop()
+            self.assertTrue(self._wait_for(lambda: bool(self._events_of("disconnected"))))
+
+        self.assertEqual(
+            self._events_of("disconnected")[0]["reason"],
+            tcp_server.REASON_SERVER_STOPPED,
+        )
+
+    def test_events_are_attributed_to_the_right_connection(self):
+        first = socket.create_connection(("127.0.0.1", self.port), timeout=5)
+        second = socket.create_connection(("127.0.0.1", self.port), timeout=5)
+        self.assertTrue(
+            self._wait_for(lambda: len(self._events_of("connected")) == 2)
+        )
+        first.close()
+
+        self.assertTrue(self._wait_for(lambda: bool(self._events_of("disconnected"))))
+        closed = self._events_of("disconnected")[0]["addr"]
+        peers = {e["addr"] for e in self._events_of("connected")}
+        self.assertIn(closed, peers)
+        second.close()
+
+    def test_a_failing_event_handler_does_not_break_the_connection(self):
+        """界面画不出来不该让服务端崩掉，更不该把连接弄断。"""
+        def boom(kind, **fields):
+            raise RuntimeError("ui exploded")
+
+        server = tcp_server.TcpServer(host="127.0.0.1", port=0, on_event=boom)
+        threading.Thread(target=server.start, daemon=True).start()
+        port = _wait_for_port(server)
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=5) as sock:
+                sock.sendall(json.dumps({"type": "heartbeat"}).encode() + b"\n")
+                self.assertTrue(
+                    self._wait_for(lambda: len(self.received) > 0),
+                    "事件处理器抛异常后连接仍应正常处理消息",
+                )
+        finally:
+            server.stop()
+
+
+def _wait_for_port(server, timeout=5.0):
+    """等到服务端真的 bind 上。`server.server` 一被赋值就非 None，但那时还没 bind。"""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        sock = server.server
+        if sock is not None:
+            try:
+                port = sock.getsockname()[1]
+            except OSError:
+                port = 0
+            if port:
+                return port
+        time.sleep(0.01)
+    raise AssertionError("服务端未能在 5 秒内开始监听")
+
+
+class BoundPortTest(unittest.TestCase):
+    def test_bound_port_is_the_real_port_for_port_zero(self):
+        server = tcp_server.TcpServer(host="127.0.0.1", port=0)
+        threading.Thread(target=server.start, daemon=True).start()
+        try:
+            port = _wait_for_port(server)
+            self.assertEqual(server.bound_port, port)
+            self.assertNotEqual(server.bound_port, server.port)
+        finally:
+            server.stop()
+
+    def test_bound_port_before_start_falls_back(self):
+        self.assertEqual(
+            tcp_server.TcpServer(host="127.0.0.1", port=5800).bound_port, 5800
+        )
 
 
 if __name__ == "__main__":

@@ -49,11 +49,14 @@ $ClientDir = Join-Path $RepoRoot 'client'
 
 # 发布包内容白名单。新增运行时模块必须加到这里，否则脚本会报错提醒你。
 $RuntimeFiles = @(
-    'server.py'             # 无头模式入口
-    'server_ui.py'          # GUI 入口
+    'server.py'             # 唯一入口：GUI / 无头 / --status / --stop
+    'server_ui.py'          # Tkinter GUI 实现
     'handlers.py'           # 协议处理器（两个入口共用）
     'pairing.py'            # 配对令牌
     'protocol.py'           # 消息分派
+    'state.py'              # 连接状态机与运行状态快照
+    'runtime.py'            # 数据目录 / 状态文件 / 单实例 / 日志
+    'control.py'            # 本机控制通道（--status / --stop 靠它）
     'tcp_server.py'         # TCP 服务器
     'input_controller.py'   # SendInput 注入
     'requirements.txt'

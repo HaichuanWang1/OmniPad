@@ -11,7 +11,7 @@ import logging
 
 import pairing
 from input_controller import move_mouse, click_mouse, scroll, send_text, press_key
-from protocol import InvalidParams, handler, send_json, send_error
+from protocol import InvalidParams, emit, handler, send_json, send_error
 
 logger = logging.getLogger("OmniPad")
 
@@ -68,6 +68,9 @@ def _text_field(msg, key):
 def on_handshake(conn, msg):
     version = msg.get("version", "")
     if version != PROTOCOL_VERSION:
+        # 上报被拒原因：界面要显示的是「版本不匹配」而不是干巴巴一句「已断开」，
+        # 用户据此才知道该升级哪一端。
+        emit(conn, "handshake_rejected", code="VERSION_MISMATCH")
         send_error(
             conn, "VERSION_MISMATCH",
             f"expected {PROTOCOL_VERSION} got {version}",
@@ -78,9 +81,11 @@ def on_handshake(conn, msg):
         provided = pairing.normalize(msg.get("token", ""))
         if provided != _expected_token:
             logger.warning("handshake rejected: invalid pairing token")
+            emit(conn, "handshake_rejected", code="AUTH_FAILED")
             send_error(conn, "AUTH_FAILED", "invalid pairing token")
             return False
 
+    emit(conn, "handshake_ok")
     send_json(conn, {"type": "handshake_ack", "version": PROTOCOL_VERSION})
     logger.info(f"handshake OK, version={version}")
     return True

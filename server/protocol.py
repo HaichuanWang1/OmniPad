@@ -1,4 +1,7 @@
 import json
+import logging
+
+logger = logging.getLogger("OmniPad")
 
 HANDLER_REGISTRY = {}
 
@@ -35,6 +38,57 @@ def handler(msg_type):
         return fn
     return decorator
 
+class Connection:
+    """一次客户端连接的上下文。
+
+    处理器只把它当成「能 sendall 的东西」用（`send_json` / `send_error` 就是），
+    所以 `test_handlers.py` 里的 FakeConn 一个字都不用改 —— 它们本来就只有
+    `sendall`。
+
+    多出来的 `emit` 把连接上发生的事（收到消息、握手成功/被拒）带回服务端，
+    状态机与界面据此更新。改造前这些信息在 `tcp_server` 里被丢掉了，于是
+    界面只能靠「连接建立了没有」来猜状态，猜出来的「在线」是假的。
+    """
+
+    __slots__ = ("sock", "addr", "peer", "port", "_on_event")
+
+    def __init__(self, sock, addr, on_event=None):
+        self.sock = sock
+        self.peer = str(addr[0])
+        self.port = int(addr[1])
+        self.addr = f"{self.peer}:{self.port}"
+        self._on_event = on_event
+
+    def sendall(self, data):
+        return self.sock.sendall(data)
+
+    def close(self):
+        return self.sock.close()
+
+    def emit(self, kind, **fields):
+        if self._on_event is None:
+            return
+        try:
+            self._on_event(kind, addr=self.addr, **fields)
+        except Exception:                      # 上报失败绝不能影响协议处理
+            logger.exception(f"event sink failed for {kind}")
+
+
+def emit(conn, kind, **fields):
+    """把连接上的事件报给服务端。
+
+    没有 emit 能力的 conn（测试里的假对象、以及 tcp_server 直接调 send_error
+    时的原始 socket）会被安静跳过，因此这个钩子对既有调用方是零侵入的。
+    """
+    fn = getattr(conn, "emit", None)
+    if fn is None:
+        return
+    try:
+        fn(kind, **fields)
+    except Exception:
+        logger.exception(f"event sink failed for {kind}")
+
+
 def handle_message(conn, msg):
     # json.loads 对 [1,2] / 42 / "hi" 都返回合法结果，但它们不是对象。
     # 不挡住的话下面 msg.get 会抛 AttributeError —— 它不被 InvalidParams 捕获，
@@ -63,6 +117,9 @@ def handle_message(conn, msg):
                 raise InvalidParams(
                     f"unexpected field(s) for {msg_type}: {', '.join(sorted(extra))}"
                 )
+        # 字段校验通过即算「收到一条合法消息」，即使处理器随后拒绝它
+        # （比如握手令牌错误）—— 用户看到的「最后活动时间」应该包含这一条。
+        emit(conn, "message", type=msg_type)
         return handler_fn(conn, msg)
     except InvalidParams as e:
         send_error(conn, "INVALID_PARAMS", str(e))
@@ -77,4 +134,5 @@ def send_json(conn, data):
         return False
 
 def send_error(conn, code, message):
+    emit(conn, "error", code=code)
     return send_json(conn, {"type": "error", "code": code, "message": message})
