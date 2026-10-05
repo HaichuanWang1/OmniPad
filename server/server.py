@@ -463,7 +463,24 @@ def run_headless(session, logger):
     return EXIT_OK
 
 
+def gui_available() -> bool:
+    """这个可执行文件里有没有图形界面。
+
+    CLI 那个 exe 排除了 tkinter（省约 3 MB），所以它开不了窗口。提前问一句，
+    总比让用户先看到「端口被占用」再看到 ImportError 强。
+    """
+    import importlib.util
+    return importlib.util.find_spec("tkinter") is not None
+
+
 def run_server(args, data_dir):
+    if not args.headless and not gui_available():
+        print(
+            "这个可执行文件只包含命令行模式，无法打开图形界面。\n"
+            "请运行同目录下的 OmniPad-Server.exe，或加上 --headless 走无头模式。"
+        )
+        return EXIT_FAILED
+
     runtime.ensure_dir(data_dir)
     logger = runtime.setup_logging(runtime.log_file_path(data_dir))
 
@@ -551,7 +568,14 @@ def _launch(args, data_dir, logger, lock):
     if args.headless:
         return run_headless(session, logger)
 
-    import server_ui
+    try:
+        import server_ui
+    except ImportError:
+        print(
+            "这个可执行文件只包含命令行模式，无法打开图形界面。\n"
+            "请运行同目录下的 OmniPad-Server.exe，或加上 --headless 走无头模式。"
+        )
+        return EXIT_FAILED
     return server_ui.run_app(session)
 
 

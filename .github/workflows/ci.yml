@@ -41,12 +41,15 @@ jobs:
           }
 
       # 打包脚本是发布流程的唯一入口，它坏了整个发布就不可信。
+      - name: 安装打包依赖
+        run: python -m pip install pyinstaller
+
       - name: 打包脚本冒烟测试
         shell: pwsh
         run: |
           ./scripts/package.ps1 -Target server
 
-          $zip = Get-ChildItem dist/omnipad-server-v*.zip
+          $zip = Get-ChildItem dist/omnipad-server-v*.zip | Sort-Object Name | Select-Object -Last 1
           if (-not $zip) { throw '打包脚本没有产出 dist/omnipad-server-v<版本>.zip' }
           Write-Host "产出：$($zip.Name)（$($zip.Length) 字节）"
 
@@ -56,13 +59,28 @@ jobs:
           $archive.Dispose()
 
           # 回归守卫：历史上每个发布包都混进了 test_client.py 和 0 字节的 __init__.py
-          $leaked = $names | Where-Object { $_ -match '^test_.*\.py$' -or $_ -eq '__init__.py' }
+          $leaked = $names | Where-Object { $_ -match '(^|/)test_.*\.py$' -or $_ -match '(^|/)__init__\.py$' }
           if ($leaked) { throw "发布包混入了开发文件：$($leaked -join ', ')" }
 
-          foreach ($required in @('server.py', 'server_ui.py', 'handlers.py', 'pairing.py', 'tcp_server.py', 'input_controller.py', 'protocol.py', 'state.py', 'runtime.py', 'control.py', 'tray.py', 'assets/omnipad.ico')) {
-            if ($names -notcontains $required) { throw "发布包缺少 $required" }
+          $required = @(
+            'server.py', 'server_ui.py', 'handlers.py', 'pairing.py', 'tcp_server.py',
+            'input_controller.py', 'protocol.py', 'state.py', 'runtime.py', 'control.py',
+            'tray.py', 'assets/omnipad.ico',
+            'OmniPad-Server.exe', 'OmniPad-Server-CLI.exe'
+          )
+          foreach ($name in $required) {
+            if ($names -notcontains $name) { throw "发布包缺少 $name" }
           }
           Write-Host "内容检查通过：$($names.Count) 个条目"
+
+          # 可复现构建：同样的源码两次打包必须产出完全相同的字节，否则发布说明里的
+          # SHA256 就没有意义。exe 尤其容易漂 —— PyInstaller 内部用 set 收集模块，
+          # PYTHONHASHSEED 不固定时两次构建能差出一千多字节。
+          $first = (Get-FileHash $zip.FullName -Algorithm SHA256).Hash
+          ./scripts/package.ps1 -Target server | Out-Null
+          $second = (Get-FileHash $zip.FullName -Algorithm SHA256).Hash
+          if ($first -ne $second) { throw "打包不可复现：$first != $second" }
+          Write-Host "可复现构建通过：$first"
 
   client:
     name: Client compile & test

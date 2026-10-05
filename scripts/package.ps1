@@ -19,15 +19,18 @@
 .PARAMETER Version
     覆盖版本号，默认读 VERSION 文件。
 
-.PARAMETER BuildExe
-    额外用 PyInstaller 生成 server_ui.exe 一并打包，需要先 pip install pyinstaller。
-    默认关闭：exe 体积大、未签名会触发 SmartScreen，且多数用户已装 Python。
+.PARAMETER SkipExe
+    跳过 PyInstaller 打包 OmniPad-Server.exe。
+
+    默认**会**打包：exe 才是普通用户实际拿到的东西（不需要装 Python），
+    把它排除在默认路径之外，等于发布流程里最关键的一步从来没被验证过。
+    需要快速迭代或离线时才用它跳过。
 
 .EXAMPLE
     pwsh scripts/package.ps1 -Target server
 
 .EXAMPLE
-    pwsh scripts/package.ps1 -BuildExe
+    pwsh scripts/package.ps1 -Target server -SkipExe
 #>
 [CmdletBinding()]
 param(
@@ -36,7 +39,7 @@ param(
 
     [string]$Version,
 
-    [switch]$BuildExe
+    [switch]$SkipExe
 )
 
 $ErrorActionPreference = 'Stop'
@@ -100,7 +103,7 @@ server/ 下有未归类的 Python 文件，拒绝打包：
 }
 
 function New-ServerPackage {
-    param([string]$ReleaseVersion)
+    param([string]$ReleaseVersion, [switch]$SkipExe)
 
     Assert-ServerFilesClassified
 
@@ -129,35 +132,46 @@ function New-ServerPackage {
 OmniPad 服务端 v$ReleaseVersion
 ================================
 
-运行要求：Windows 10/11 + Python 3.10 或更高版本。
+运行要求：Windows 10/11（64 位）。
 
-启动方式（在本目录下执行）：
-    python server_ui.py      图形界面（推荐）
-    python server.py         无头模式
+启动方式（二选一，都在本目录下）：
 
-首次启动会生成配对令牌，显示在窗口顶部，并在手机端首次连接时填入。
-令牌保存在 pairing_token.txt，删除该文件即可重新生成。
+    OmniPad-Server.exe        双击即可，不需要装 Python（推荐）
+    python server.py          需要 Python 3.10 或更高版本
 
-本服务端只依赖 Python 标准库，不需要 pip install。
+同一个 exe 也能当命令行工具用：
+
+    OmniPad-Server.exe --status           查看运行状态
+    OmniPad-Server.exe --status --json    机器可读的状态（JSON）
+    OmniPad-Server.exe --stop             停止正在运行的实例
+    OmniPad-Server.exe --headless         无头模式（不开窗口）
+    OmniPad-Server.exe --port 5801        换一个端口
+
+退出码：0 成功 / 1 失败 / 2 已在运行 / 3 未在运行。
+
+首次启动会生成配对令牌，显示在窗口顶部（也可用 --status 查看），
+在手机端首次连接时填入。令牌保存在数据目录的 pairing_token.txt，
+删除该文件即可重新生成（手机端需要重新配对）。
+
+数据目录：
+    OmniPad-Server.exe   %APPDATA%\OmniPad
+    python server.py     本目录
+
+数据目录里有 pairing_token.txt（配对令牌）、server_status.json（运行状态）、
+logs\server.log（日志）。状态文件是纯文本，任何时候都能看出服务端在不在跑、
+谁连着、为什么断开。
+
+Windows 可能弹出 SmartScreen 提示 —— 本程序没有做代码签名，
+点「更多信息 → 仍要运行」即可。
+
+本服务端只依赖 Python 标准库，源码运行不需要 pip install。
 "@
         # 用 UTF-8 BOM 写出，否则记事本打开中文会乱码。
         $readmePath = Join-Path $stage '使用说明.txt'
         [System.IO.File]::WriteAllText($readmePath, $readme, (New-Object System.Text.UTF8Encoding $true))
 
-        if ($BuildExe) {
-            Write-Host '正在用 PyInstaller 生成 server_ui.exe ...'
-            Push-Location $ServerDir
-            try {
-                # Out-Host 是必须的：直接调用会让 PyInstaller 的 stdout 流进管道，
-                # 混进本函数的返回值里，调用方拿到的就不是文件路径了。
-                & python -m PyInstaller --noconfirm --onefile --windowed `
-                    --name server_ui --distpath $stage --workpath (Join-Path $stage '_build') `
-                    --specpath (Join-Path $stage '_build') server_ui.py 2>&1 | Out-Host
-                if ($LASTEXITCODE -ne 0) { throw "PyInstaller 失败（退出码 $LASTEXITCODE）" }
-            }
-            finally { Pop-Location }
-
-            Remove-Item (Join-Path $stage '_build') -Recurse -Force -ErrorAction SilentlyContinue
+        if (-not $SkipExe) {
+            New-ServerExe -ReleaseVersion $ReleaseVersion -Stage $stage
         }
 
         $outFile = Join-Path $DistDir "omnipad-server-v$ReleaseVersion.zip"
@@ -169,6 +183,105 @@ OmniPad 服务端 v$ReleaseVersion
     finally {
         Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue
     }
+}
+
+function New-ServerExe {
+    <#
+        打两个 exe：
+
+        OmniPad-Server.exe      图形子系统（--windowed）。双击即用，不弹黑框。
+        OmniPad-Server-CLI.exe  控制台子系统（--console）。命令行用。
+
+        为什么不是一个：Windows 的子系统标志是二选一，而两种用法对它的要求正好相反。
+        图形子系统的程序，cmd / PowerShell **不会等待它结束** ——
+        `OmniPad-Server.exe --status --json | ConvertFrom-Json` 拿到的是空，
+        退出码也拿不到。控制台子系统的程序则会弹出一个黑框。
+
+        试过「控制台子系统 + 启动时判断要不要隐藏黑框」：靠
+        GetConsoleProcessList 判断的启发式在本机实测不可靠（Explorer 双击给的是 2
+        而不是 1），靠父进程名判断又会被 PyInstaller onefile 的自我重启挡住。
+        与其赌一个启发式，不如老实地打两个 exe。
+
+        CLI 那个排除了 tkinter（省约 3 MB），所以它打不开图形界面 ——
+        无参数运行时会给一句明确提示，而不是抛 ImportError。
+    #>
+    param([string]$ReleaseVersion, [string]$Stage)
+
+    Write-Host '正在用 PyInstaller 生成 exe ...'
+
+    & python -c "import PyInstaller" 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw @'
+没有找到 PyInstaller，无法生成 exe。安装：
+    python -m pip install pyinstaller
+（离线环境可以用 -SkipExe 跳过，但那样发出去的包需要用户自己装 Python。）
+'@
+    }
+
+    $buildDir = Join-Path $Stage '_build'
+    New-Item -ItemType Directory -Path $buildDir -Force | Out-Null
+
+    $versionFile = Join-Path $buildDir 'version_info.txt'
+    & python (Join-Path $PSScriptRoot 'make_version_info.py') $ReleaseVersion $versionFile | Out-Host
+    if ($LASTEXITCODE -ne 0) { throw "生成版本资源失败（退出码 $LASTEXITCODE）" }
+
+    $icon = (Resolve-Path (Join-Path $ServerDir 'assets\omnipad.ico')).Path
+    $entry = (Resolve-Path (Join-Path $ServerDir 'server.py')).Path
+    $paths = (Resolve-Path $ServerDir).Path
+    $assets = (Resolve-Path (Join-Path $ServerDir 'assets')).Path
+    $versionSource = (Resolve-Path (Join-Path $RepoRoot 'VERSION')).Path
+
+    # PyInstaller 认这个变量来做可复现构建：PE 头与归档条目的时间戳都取它，
+    # 否则同一个源码每次产出的 exe 字节都不同，发布说明里的 SHA256 就没意义了。
+    # 2000-01-01，与 zip 里固定的条目时间一致。
+    #
+    # PYTHONHASHSEED 同样必须固定：PyInstaller 内部用 set 收集模块，字符串哈希
+    # 每个进程都不同，模块在 PYZ 归档里的顺序就跟着变 —— 两次构建能差出一千多字节。
+    $previousEpoch = $env:SOURCE_DATE_EPOCH
+    $previousHashSeed = $env:PYTHONHASHSEED
+    $env:SOURCE_DATE_EPOCH = '946684800'
+    $env:PYTHONHASHSEED = '0'
+    try {
+        $builds = @(
+            @{ Name = 'OmniPad-Server';     Console = $false; Excludes = @() },
+            @{ Name = 'OmniPad-Server-CLI'; Console = $true;  Excludes = @('tkinter', '_tkinter') }
+        )
+
+        foreach ($build in $builds) {
+            $arguments = @(
+                '-m', 'PyInstaller', '--noconfirm', '--onefile', '--clean',
+                '--name', $build.Name,
+                '--icon', $icon,
+                '--version-file', $versionFile,
+                '--add-data', "$versionSource;.",
+                '--add-data', "$assets;assets",
+                '--paths', $paths,
+                '--distpath', $Stage,
+                '--workpath', $buildDir,
+                '--specpath', $buildDir
+            )
+            if (-not $build.Console) { $arguments += '--windowed' } else { $arguments += '--console' }
+            foreach ($module in $build.Excludes) { $arguments += @('--exclude-module', $module) }
+            $arguments += $entry
+
+            # Out-Host 是必须的：直接调用会让 PyInstaller 的 stdout 流进管道，
+            # 混进本函数的返回值里，调用方拿到的就不是文件路径了。
+            & python @arguments 2>&1 | Out-Host
+            if ($LASTEXITCODE -ne 0) { throw "PyInstaller 失败（$($build.Name)，退出码 $LASTEXITCODE）" }
+
+            $produced = Join-Path $Stage "$($build.Name).exe"
+            if (-not (Test-Path $produced)) { throw "PyInstaller 没有产出 $produced" }
+            Write-Host ("  {0}  {1:N0} 字节" -f "$($build.Name).exe", (Get-Item $produced).Length)
+        }
+    }
+    finally {
+        if ($null -eq $previousEpoch) { Remove-Item Env:\SOURCE_DATE_EPOCH -ErrorAction SilentlyContinue }
+        else { $env:SOURCE_DATE_EPOCH = $previousEpoch }
+        if ($null -eq $previousHashSeed) { Remove-Item Env:\PYTHONHASHSEED -ErrorAction SilentlyContinue }
+        else { $env:PYTHONHASHSEED = $previousHashSeed }
+    }
+
+    Remove-Item $buildDir -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 function New-DeterministicZip {
@@ -246,7 +359,7 @@ New-Item -ItemType Directory -Path $DistDir -Force | Out-Null
 Write-Host "OmniPad 打包 v$releaseVersion (target=$Target)" -ForegroundColor Cyan
 
 $produced = @()
-if ($Target -in @('server', 'all')) { $produced += New-ServerPackage $releaseVersion }
+if ($Target -in @('server', 'all')) { $produced += New-ServerPackage $releaseVersion -SkipExe:$SkipExe }
 if ($Target -in @('client', 'all')) { $produced += New-ClientPackage $releaseVersion }
 
 Write-Host ''

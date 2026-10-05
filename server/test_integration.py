@@ -10,6 +10,7 @@
 运行：
     cd server && python test_integration.py
 """
+import io
 import json
 import os
 import socket
@@ -18,6 +19,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 SERVER_DIR = os.path.dirname(os.path.abspath(__file__))
 SERVER_PY = os.path.join(SERVER_DIR, "server.py")
@@ -491,6 +493,39 @@ class EphemeralPortTest(unittest.TestCase):
         for index in range(8):
             with self.subTest(index=index):
                 self.assertNotEqual(self._start(index).state.bound_port, 0)
+
+
+class GuiAvailabilityTest(unittest.TestCase):
+    """CLI 那个 exe 排除了 tkinter，所以它开不了窗口。
+
+    必须提前说清楚，而不是让用户先看到「端口被占用」，或者更糟 ——
+    一个 ImportError 堆栈。
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.data_dir = self._tmp.name
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_tkinter_is_present_in_a_source_run(self):
+        self.assertTrue(server.gui_available())
+
+    def test_cli_only_build_refuses_to_open_a_window(self):
+        args = server.build_parser().parse_args(["--data-dir", self.data_dir])
+        with mock.patch.object(server, "gui_available", return_value=False), \
+             mock.patch("sys.stdout", new_callable=io.StringIO) as stdout:
+            code = server.run_server(args, self.data_dir)
+
+        self.assertEqual(code, server.EXIT_FAILED)
+        self.assertIn("只包含命令行模式", stdout.getvalue())
+
+    def test_headless_still_allowed_without_tkinter(self):
+        """无头模式根本不需要 tkinter，不该被这条检查挡住。"""
+        args = server.build_parser().parse_args(
+            ["--headless", "--port", "0", "--data-dir", self.data_dir])
+        self.assertTrue(args.headless)
 
 
 if __name__ == "__main__":
