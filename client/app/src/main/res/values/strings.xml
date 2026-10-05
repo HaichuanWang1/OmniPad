@@ -58,8 +58,6 @@
     <string name="failure_server_error_hint">电脑端在处理请求时返回了错误，详情见上方信息。</string>
 
     <!-- 触控板 -->
-    <string name="touchpad_idle">触摸板</string>
-    <string name="touchpad_dragging">正在拖动</string>
     <string name="touchpad_text_placeholder">在这里输入，直接打到电脑上</string>
     <string name="touchpad_backspace">退格</string>
     <string name="mouse_left">左键</string>
@@ -68,8 +66,8 @@
     <string name="mouse_left_held">左键已按住</string>
     <string name="mouse_right_held">右键已按住</string>
     <string name="mouse_middle_held">中键已按住</string>
-    <string name="touchpad_hint">轻点左键 · 长按右键 · 双指滚动</string>
-    <string name="touchpad_accessibility">触摸板。单指拖动移动指针，轻点左键单击，长按右键单击，双指拖动滚动。</string>
+    <string name="touchpad_hint">轻点单击 · 长按右键 · 轻点后按住拖动 · 双指滚动</string>
+    <string name="touchpad_accessibility">触摸板。单指拖动移动指针，轻点左键单击，长按右键单击，双指拖动滚动。拖拽文件或选取文字时，请用下方的鼠标键开关按住左键。</string>
 
     <!-- 控制面板 -->
     <string name="panel_tab_keyboard">键盘</string>

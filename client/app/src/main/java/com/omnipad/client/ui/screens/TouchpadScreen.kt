@@ -139,6 +139,10 @@ fun TouchpadScreen(
      *
      * 切到另一个键时**必须先松开上一个**：上一版直接覆盖状态，导致先按下的那个键
      * 在 Windows 侧永远处于按下状态，直到用户手动再点一次。
+     *
+     * 触控板的 tap-drag（轻点后按住拖动）也走这里 —— 面板的「左键」必须同步显示
+     * 按住状态，否则用户看到没亮、再点一下面板，就会送出 `left up`
+     * 把正在进行的拖动无声无息地掐断。
      */
     fun toggleMouseButton(button: String) {
         haptics.click()
@@ -151,6 +155,22 @@ fun TouchpadScreen(
             heldMouseButton = button
             onSendMessage(MouseClick(button, "down"))
         }
+    }
+
+    /** 触控板手势要「按下并保持」（tap-drag 的起点）。 */
+    fun pressMouseButton(button: String) {
+        val held = heldMouseButton
+        if (held == button) return          // 已经按住了，重复的 down 会让电脑侧状态错乱
+        held?.let { onSendMessage(MouseClick(it, "up")) }
+        heldMouseButton = button
+        onSendMessage(MouseClick(button, "down"))
+    }
+
+    /** 触控板手势松开之前按住的键（tap-drag 结束）。 */
+    fun releaseMouseButton(button: String) {
+        if (heldMouseButton != button) return
+        heldMouseButton = null
+        onSendMessage(MouseClick(button, "up"))
     }
 
     // 每次重组都重新构造：闭包要读到最新的 activeModifiers，remember 会捕获旧值
@@ -230,6 +250,8 @@ fun TouchpadScreen(
                             heldMouseButton = heldMouseButton,
                             onSendMessage = onSendMessage,
                             onToggleMouseButton = { toggleMouseButton(it) },
+                            onPressMouseButton = { pressMouseButton(it) },
+                            onReleaseMouseButton = { releaseMouseButton(it) },
                             modifier = Modifier.weight(1f).fillMaxHeight(),
                         )
                         ControlPanel(
@@ -248,6 +270,8 @@ fun TouchpadScreen(
                             heldMouseButton = heldMouseButton,
                             onSendMessage = onSendMessage,
                             onToggleMouseButton = { toggleMouseButton(it) },
+                            onPressMouseButton = { pressMouseButton(it) },
+                            onReleaseMouseButton = { releaseMouseButton(it) },
                             modifier = Modifier.weight(1f),
                         )
                         ControlPanel(
@@ -298,6 +322,8 @@ private fun PadArea(
     heldMouseButton: String?,
     onSendMessage: (OmniPadMessage) -> Unit,
     onToggleMouseButton: (String) -> Unit,
+    onPressMouseButton: (String) -> Unit,
+    onReleaseMouseButton: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -310,6 +336,8 @@ private fun PadArea(
             haptics = haptics,
             onPointerMove = { dx, dy -> onSendMessage(MouseMove(dx, dy)) },
             onButtonClick = { button -> onSendMessage(MouseClick(button, "click")) },
+            onButtonPress = onPressMouseButton,
+            onButtonRelease = onReleaseMouseButton,
             onScroll = { delta -> onSendMessage(Scroll(delta)) },
             modifier = Modifier.weight(1f).fillMaxWidth(),
         )
