@@ -304,5 +304,99 @@ class MessageValidationTest(unittest.TestCase):
         self.assertEqual(self.calls, [])
 
 
+class AdditionalPropertiesTest(unittest.TestCase):
+    """docs/schema.json 声明了 additionalProperties: false，这里确认服务端真的强制。
+
+    没有强制时，字段名打错会被静默忽略 —— 客户端把 dx 写成 dX，服务端取不到
+    dx 就用默认值 0，于是「拖动没反应」，而日志里一点异常都没有。
+    """
+
+    def setUp(self):
+        self.conn = FakeConn()
+        self._orig_token = handlers.get_pairing_token()
+        handlers.set_pairing_token(None)
+
+        self._orig_io = (
+            handlers.move_mouse, handlers.click_mouse, handlers.scroll,
+            handlers.send_text, handlers.press_key,
+        )
+        handlers.move_mouse = lambda dx, dy: True
+        handlers.click_mouse = lambda button, action: True
+        handlers.scroll = lambda delta: True
+        handlers.send_text = lambda text: True
+        handlers.press_key = lambda key, action: True
+
+    def tearDown(self):
+        (handlers.move_mouse, handlers.click_mouse, handlers.scroll,
+         handlers.send_text, handlers.press_key) = self._orig_io
+        handlers.set_pairing_token(self._orig_token)
+
+    def _dispatch(self, msg):
+        protocol.handle_message(self.conn, msg)
+        return self.conn.sent[-1] if self.conn.sent else None
+
+    def test_unexpected_field_rejected(self):
+        resp = self._dispatch({"type": "mouse_move", "dx": 1, "dy": 2, "dz": 3})
+        self.assertEqual(resp["code"], "INVALID_PARAMS")
+        self.assertIn("dz", resp["message"])
+
+    def test_misspelled_field_is_not_silently_ignored(self):
+        resp = self._dispatch({"type": "mouse_move", "dX": 10, "dy": 0})
+        self.assertEqual(resp["code"], "INVALID_PARAMS")
+
+    def test_heartbeat_rejects_extra_field(self):
+        resp = self._dispatch({"type": "heartbeat", "seq": 1})
+        self.assertEqual(resp["code"], "INVALID_PARAMS")
+
+    def test_valid_message_still_accepted(self):
+        self.assertIsNone(self._dispatch({"type": "mouse_move", "dx": 1, "dy": 2}))
+
+    def test_non_object_json_is_rejected(self):
+        # 客户端发 [1,2] / 42 / "hi" 是合法 JSON 但不是对象。旧代码在这里抛
+        # AttributeError，它不被 InvalidParams 捕获，会一路冒到 tcp_server 的
+        # 兜底 except，把整条连接干掉 —— 而不是回一个 INVALID_PARAMS。
+        for payload in ([1, 2], 42, "hello", None, True):
+            with self.subTest(payload=payload):
+                self.conn.sent.clear()
+                resp = self._dispatch(payload)
+                self.assertIsNotNone(resp, f"{payload!r} 应当收到错误响应")
+                self.assertEqual(resp["code"], "INVALID_PARAMS")
+
+
+class SchemaConformanceTest(unittest.TestCase):
+    """protocol.ALLOWED_FIELDS 必须与 docs/schema.json 逐项一致。
+
+    服务端刻意不引入 JSON Schema 校验器：发布包里不含 docs/，而且服务端只用
+    标准库。于是允许字段写死在代码里 —— 那就必须有东西盯着它别漂移，就是这个测试。
+    """
+
+    def _schema_objects(self):
+        path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "..", "docs", "schema.json"
+        )
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)["oneOf"]
+
+    def test_allowed_fields_match_schema(self):
+        from_schema = {}
+        for obj in self._schema_objects():
+            self.assertFalse(
+                obj.get("additionalProperties", True),
+                f"{obj.get('title')} 在 schema 里没有声明 additionalProperties: false",
+            )
+            type_const = obj["properties"]["type"]["const"]
+            from_schema[type_const] = frozenset(obj["properties"])
+
+        self.assertEqual(
+            from_schema,
+            protocol.ALLOWED_FIELDS,
+            "protocol.ALLOWED_FIELDS 与 docs/schema.json 不一致，两边必须同步改",
+        )
+
+    def test_every_handler_type_is_covered(self):
+        missing = set(protocol.HANDLER_REGISTRY) - set(protocol.ALLOWED_FIELDS)
+        self.assertEqual(missing, set(), f"这些消息类型没有登记允许字段: {missing}")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
