@@ -79,6 +79,7 @@
 ```
 OmniPad/
 ├── VERSION                  # 版本号唯一来源（Gradle 与打包脚本都读它）
+├── .editorconfig            # 字符集与缩进约定
 ├── docs/                    # 协议文档（唯一接口标准）
 │   ├── protocol.md
 │   └── schema.json
@@ -94,6 +95,7 @@ OmniPad/
 │   ├── input_controller.py  # Windows SendInput 注入
 │   ├── test_client.py       # 本地手工联调脚本
 │   ├── test_handlers.py     # 握手、配对令牌、字段校验测试
+│   ├── test_server_ui.py    # 客户端历史淘汰等纯逻辑测试
 │   └── test_tcp_server.py   # 分帧与连接生命周期测试
 └── client/                  # Android 客户端
     └── app/src/

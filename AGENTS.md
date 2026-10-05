@@ -8,6 +8,7 @@ OmniPad/
 ├── README.md               # 使用说明
 ├── CHANGELOG.md            # 版本变更记录
 ├── VERSION                 # 版本号唯一来源（Gradle 与打包脚本都读它）
+├── .editorconfig           # 字符集与缩进约定
 ├── fix.md                  # 待办修复清单
 ├── docs/                   # 共享协议文档（唯一接口标准）
 │   ├── protocol.md
@@ -23,7 +24,8 @@ OmniPad/
 │   ├── tcp_server.py       # 多线程 TCP 服务器
 │   ├── input_controller.py # Windows SendInput 注入
 │   ├── test_client.py      # 手工联调脚本
-│   ├── test_handlers.py    # 握手与配对令牌测试
+│   ├── test_handlers.py    # 握手、配对令牌、字段校验测试
+│   ├── test_server_ui.py   # 客户端历史淘汰等纯逻辑测试
 │   ├── test_tcp_server.py  # 分帧与连接生命周期测试
 │   └── requirements.txt
 ├── client/                 # Kotlin 手机端（TCP 客户端）
