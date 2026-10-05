@@ -1,0 +1,12 @@
+# 行尾统一规则。
+#
+# 本仓库在 Windows 上开发（core.autocrlf=true），但 CI 跑在 Linux 上。
+# 没有这个文件时，gradlew 会被检出成 CRLF，Linux 上 `#!/bin/sh\r` 直接失败。
+
+# shell 脚本必须在类 Unix 系统上可执行，行尾固定 LF
+gradlew text eol=lf
+*.sh text eol=lf
+
+# Windows 批处理与 PowerShell 保持 CRLF
+*.bat text eol=crlf
+*.ps1 text eol=crlf
