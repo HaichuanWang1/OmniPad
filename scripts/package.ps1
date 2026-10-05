@@ -137,9 +137,11 @@ OmniPad 服务端 v$ReleaseVersion
             Write-Host '正在用 PyInstaller 生成 server_ui.exe ...'
             Push-Location $ServerDir
             try {
+                # Out-Host 是必须的：直接调用会让 PyInstaller 的 stdout 流进管道，
+                # 混进本函数的返回值里，调用方拿到的就不是文件路径了。
                 & python -m PyInstaller --noconfirm --onefile --windowed `
                     --name server_ui --distpath $stage --workpath (Join-Path $stage '_build') `
-                    --specpath (Join-Path $stage '_build') server_ui.py
+                    --specpath (Join-Path $stage '_build') server_ui.py 2>&1 | Out-Host
                 if ($LASTEXITCODE -ne 0) { throw "PyInstaller 失败（退出码 $LASTEXITCODE）" }
             }
             finally { Pop-Location }
