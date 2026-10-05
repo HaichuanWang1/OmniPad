@@ -15,11 +15,13 @@ OmniPad/
 │   ├── server.py           # 无头模式入口
 │   ├── server_ui.py        # Tkinter GUI 入口
 │   ├── handlers.py         # 协议处理器（两个入口共用，唯一一份）
+│   ├── pairing.py          # 配对令牌的生成与持久化
 │   ├── protocol.py         # 消息分派与发送
 │   ├── tcp_server.py       # 多线程 TCP 服务器
 │   ├── input_controller.py # Windows SendInput 注入
 │   ├── test_client.py      # 手工联调脚本
-│   ├── test_tcp_server.py  # 自动化回归测试（仅依赖标准库）
+│   ├── test_handlers.py    # 握手与配对令牌测试
+│   ├── test_tcp_server.py  # 分帧与连接生命周期测试
 │   └── requirements.txt
 ├── client/                 # Kotlin 手机端（TCP 客户端）
 └── dist/                   # 发布产物（不入库，由 GitHub Release 分发）

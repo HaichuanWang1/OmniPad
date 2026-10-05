@@ -1,5 +1,4 @@
 import ctypes
-import ctypes.wintypes
 import time
 
 MOUSEEVENTF_MOVE = 0x0001
@@ -48,7 +47,7 @@ class MOUSEINPUT(ctypes.Structure):
         ("mouseData", ctypes.c_ulong),
         ("dwFlags", ctypes.c_ulong),
         ("time", ctypes.c_ulong),
-        ("dwExtraInfo", ctypes.POINTER(ctypes.c_ulong)),
+        ("dwExtraInfo", ctypes.c_void_p),
     ]
 
 class KEYBDINPUT(ctypes.Structure):
@@ -57,7 +56,7 @@ class KEYBDINPUT(ctypes.Structure):
         ("wScan", ctypes.c_ushort),
         ("dwFlags", ctypes.c_ulong),
         ("time", ctypes.c_ulong),
-        ("dwExtraInfo", ctypes.POINTER(ctypes.c_ulong)),
+        ("dwExtraInfo", ctypes.c_void_p),
     ]
 
 class INPUT_UNION(ctypes.Union):
@@ -139,22 +138,36 @@ def _unicode_input_pair(code):
 
     return [inp_down, inp_up]
 
+# 每个字符要 2 个 INPUT（按下 + 抬起），长文本一次性构造会产生巨大的数组。
+# 分批发送，每批不超过这个数量的 INPUT 结构。
+MAX_INPUTS_PER_BATCH = 256
+
+
 def send_text(text):
-    inputs = []
+    """逐字符注入文本（BMP 之外的字符按代理对发送），分批以免构造超大数组。"""
+    if not text:
+        return True
+
+    ok = True
+    batch = []
+
     for ch in text:
         code = ord(ch)
         if code < 0x10000:
-            inputs.extend(_unicode_input_pair(code))
+            batch.extend(_unicode_input_pair(code))
         else:
             code -= 0x10000
-            high = 0xD800 + (code >> 10)
-            low = 0xDC00 + (code & 0x3FF)
-            inputs.extend(_unicode_input_pair(high))
-            inputs.extend(_unicode_input_pair(low))
+            batch.extend(_unicode_input_pair(0xD800 + (code >> 10)))
+            batch.extend(_unicode_input_pair(0xDC00 + (code & 0x3FF)))
 
-    if inputs:
-        return _send_input(inputs)
-    return True
+        # 单个字符最多产生 4 个 INPUT，因此不会把字符切到两批里
+        if len(batch) >= MAX_INPUTS_PER_BATCH:
+            ok = _send_input(batch) and ok
+            batch = []
+
+    if batch:
+        ok = _send_input(batch) and ok
+    return ok
 
 def press_key(key_name, action):
     vk = VK_MAP.get(key_name.lower())

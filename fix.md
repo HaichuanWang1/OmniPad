@@ -241,13 +241,13 @@ git 历史显示「点击被拖动吃掉」「双指滚动误触发」这类问�
 |---|------|------|
 | 12 | ~~AGENTS.md 阶段标注过期~~ 已改为 Phase 4「修复与维护（当前）」，结构图补全 `dist/`、`fix.md` 与 server 文件清单 | ~~`AGENTS.md:20`~~ |
 | 13 | ~~README.md 版本号停留 beta1~~ 已更新为 beta1.6，补「开发 / 测试」章节与已知问题说明 | ~~`README.md:1,11,17`~~ |
-| 14 | `__import__("json")` 内联导入 | `protocol.py:20` |
-| 15 | 扁平 import（`from protocol import ...`）+ 存在 `__init__.py` → `python -m server.server` 必然失败，只能 `cd server` 后运行；`__init__.py` 有误导性 | `server/*.py` |
-| 16 | `HeartbeatAck(raw)` / `HandshakeAck(version)` 字段从未被读取；`MouseClick`/`Keyboard`/`Error` 用字符串插值拼 JSON 未转义（当前值可控，但脆弱） | `Protocol.kt:13,21,33,41` |
+| 14 | ~~`__import__("json")` 内联导入~~ 已改为顶部 `import json` | ~~`protocol.py:20`~~ |
+| 15 | ~~扁平 import + 存在 `__init__.py`~~ 已删除那个 0 字节的 `server/__init__.py`；server 本就是脚本目录而非包，入口统一为 `cd server` 后运行 | ~~`server/*.py`~~ |
+| 16 | ~~字符串插值拼 JSON 未转义~~ 已全部改用 `JSONObject` 构造；`HeartbeatAck` 的 `raw` 字段从未被读取，已改为无载荷的 object；`HandshakeAck.version` 保留（日志与将来的版本协商） | ~~`Protocol.kt:13,21,33,41`~~ |
 | 17 | ~~`text_input` 明文写入日志~~ 已随 `40bae26` 消除（键盘记录风险，且与「局域网无认证」叠加） | ~~`server_ui.py:432`~~ |
-| 18 | `_clients_info` 字典只增不删，长时间运行无上限 | `server_ui.py:64` |
-| 19 | `dwExtraInfo` 用 `POINTER(c_ulong)` 而非 `ULONG_PTR`/`c_void_p`；`ctypes.wintypes` 导入未使用。实测 `sizeof(INPUT)=40` 在 x64 恰好正确，属隐患非现患 | `input_controller.py:51,61` |
-| 20 | `send_text` 不切块，长文本一次性构造 `len*2` 个 INPUT 结构 | `input_controller.py:142` |
+| 18 | ~~`_clients_info` 只增不删~~ 已加 `MAX_CLIENT_HISTORY = 200`，超限时先淘汰离线记录再淘汰最早的。注意键含源端口，每次重连都是新键，增长比预想更快 | ~~`server_ui.py:64`~~ |
+| 19 | ~~`dwExtraInfo` 用 `POINTER(c_ulong)`~~ 已改为 `c_void_p`（`ULONG_PTR` 的对应物），并删除未使用的 `ctypes.wintypes` 导入。改后实测 `sizeof(INPUT)=40` / `MOUSEINPUT=32` / `KEYBDINPUT=24` 不变 | ~~`input_controller.py:51,61`~~ |
+| 20 | ~~`send_text` 不切块~~ 已按 `MAX_INPUTS_PER_BATCH = 256` 分批。单个字符最多产生 4 个 INPUT，因此代理对不会被切到两批 | ~~`input_controller.py:142`~~ |
 
 ---
 

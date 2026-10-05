@@ -56,16 +56,36 @@ class ClientInfo:
         self.disconnected_at = None
 
 
+# 客户端记录上限。键里含源端口，每次重连都是新键，不设上限会一直增长。
+MAX_CLIENT_HISTORY = 200
+
+
 class TcpServer(BaseTcpServer):
     def __init__(self, host="0.0.0.0", port=5800, on_change=None):
         super().__init__(host, port)
         self.on_change = on_change
         self._clients_info: dict[str, ClientInfo] = {}
 
+    def _remember_client(self, addr_str, info):
+        self._clients_info[addr_str] = info
+        # 超出上限时先淘汰离线记录，再淘汰最早的
+        while len(self._clients_info) > MAX_CLIENT_HISTORY:
+            oldest = min(
+                (k for k in self._clients_info if k != addr_str),
+                key=lambda k: (
+                    self._clients_info[k].status == "connected",
+                    self._clients_info[k].connected_at,
+                ),
+                default=None,
+            )
+            if oldest is None:
+                break
+            del self._clients_info[oldest]
+
     def _handle_client(self, conn, addr):
         addr_str = f"{addr[0]}:{addr[1]}"
         info = ClientInfo(addr)
-        self._clients_info[addr_str] = info
+        self._remember_client(addr_str, info)
         self._notify()
         super()._handle_client(conn, addr)
         info.status = "disconnected"

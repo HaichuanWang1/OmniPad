@@ -1,3 +1,5 @@
+import json
+
 HANDLER_REGISTRY = {}
 
 def handler(msg_type):
@@ -17,7 +19,7 @@ def handle_message(conn, msg):
 
 def send_json(conn, data):
     try:
-        line = (__import__("json").dumps(data) + "\n").encode("utf-8")
+        line = (json.dumps(data) + "\n").encode("utf-8")
         conn.sendall(line)
         return True
     except Exception:
