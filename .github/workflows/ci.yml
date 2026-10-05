@@ -26,6 +26,10 @@ jobs:
         working-directory: server
         run: python test_handlers.py
 
+      - name: server_ui 纯逻辑（客户端历史淘汰）
+        working-directory: server
+        run: python test_server_ui.py
+
       # 打包脚本是发布流程的唯一入口，它坏了整个发布就不可信。
       - name: 打包脚本冒烟测试
         shell: pwsh
