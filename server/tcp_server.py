@@ -15,6 +15,7 @@ REASON_CLIENT_CLOSED = "client_closed"
 REASON_IDLE_TIMEOUT = "idle_timeout"
 REASON_REJECTED = "rejected"
 REASON_ERROR = "error"
+REASON_CONNECTION_RESET = "connection_reset"
 REASON_SERVER_STOPPED = "server_stopped"
 
 class TcpServer:
@@ -123,6 +124,12 @@ class TcpServer:
                     data = conn.recv(4096)
                 except socket.timeout:
                     data = None          # 本轮无数据，落到下面做空闲判定
+                except ConnectionResetError:
+                    # 对端异常关闭（进程被杀、socket 带着未读数据被 close）。
+                    # 与「客户端主动断开」分开报，否则用户分不清是手机退出了
+                    # 还是链路被掐了。
+                    reason = REASON_CONNECTION_RESET
+                    break
                 except OSError:
                     # stop() 会 shutdown 掉所有连接，此时 recv 抛的是 OSError 而不是
                     # 返回空 —— 那不是「连接出错」，是服务端自己关的。

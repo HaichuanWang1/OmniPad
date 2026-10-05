@@ -30,6 +30,7 @@ jobs:
             'test_state.py',        # 连接状态机与状态快照
             'test_runtime.py',      # 数据目录、单实例、原子写、日志
             'test_control.py',      # 本机控制通道
+            'test_tray.py',         # 托盘图标的 Win32 结构体与图标文件
             'test_server_ui.py',    # GUI 纯逻辑
             'test_integration.py'   # 端到端：真进程 + 真 CLI
           )
@@ -58,7 +59,7 @@ jobs:
           $leaked = $names | Where-Object { $_ -match '^test_.*\.py$' -or $_ -eq '__init__.py' }
           if ($leaked) { throw "发布包混入了开发文件：$($leaked -join ', ')" }
 
-          foreach ($required in @('server.py', 'server_ui.py', 'handlers.py', 'pairing.py', 'tcp_server.py', 'input_controller.py', 'protocol.py', 'state.py', 'runtime.py', 'control.py')) {
+          foreach ($required in @('server.py', 'server_ui.py', 'handlers.py', 'pairing.py', 'tcp_server.py', 'input_controller.py', 'protocol.py', 'state.py', 'runtime.py', 'control.py', 'tray.py', 'assets/omnipad.ico')) {
             if ($names -notcontains $required) { throw "发布包缺少 $required" }
           }
           Write-Host "内容检查通过：$($names.Count) 个条目"

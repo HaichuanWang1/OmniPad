@@ -35,6 +35,7 @@ STATE_OFFLINE = "offline"
 # 断开原因（机器可读 → 用户可读）。tcp_server 只发机器可读的那个。
 DISCONNECT_REASON_TEXT = {
     "client_closed": "客户端断开",
+    "connection_reset": "对端异常断开",
     "idle_timeout": "空闲超时",
     "rejected": "未通过握手",
     "error": "连接出错",

@@ -57,6 +57,7 @@ $RuntimeFiles = @(
     'state.py'              # 连接状态机与运行状态快照
     'runtime.py'            # 数据目录 / 状态文件 / 单实例 / 日志
     'control.py'            # 本机控制通道（--status / --stop 靠它）
+    'tray.py'               # 系统托盘图标（纯 ctypes）
     'tcp_server.py'         # TCP 服务器
     'input_controller.py'   # SendInput 注入
     'requirements.txt'
@@ -114,6 +115,13 @@ function New-ServerPackage {
     try {
         foreach ($name in $RuntimeFiles) {
             Copy-Item (Join-Path $ServerDir $name) (Join-Path $stage $name)
+        }
+
+        # 托盘图标与 exe 图标。源码运行（python server.py）时托盘也要用，
+        # 所以它必须随包分发，不能只塞进 exe。
+        $assets = Join-Path $ServerDir 'assets'
+        if (Test-Path $assets) {
+            Copy-Item $assets (Join-Path $stage 'assets') -Recurse
         }
 
         # 用户拿到 zip 时最需要知道的三件事：怎么启动、要不要装东西、令牌在哪。
@@ -183,10 +191,13 @@ function New-DeterministicZip {
         $archive = New-Object System.IO.Compression.ZipArchive(
             $fileStream, [System.IO.Compression.ZipArchiveMode]::Create, $true)
         try {
-            # 排序保证条目顺序稳定，不受文件系统枚举顺序影响。
-            foreach ($file in Get-ChildItem $SourceDir -File | Sort-Object Name) {
+            # 递归 + 按完整路径排序：条目顺序稳定，不受文件系统枚举顺序影响。
+            # 目录也要走，assets/ 就在子目录里。
+            foreach ($file in Get-ChildItem $SourceDir -File -Recurse | Sort-Object FullName) {
+                $relative = $file.FullName.Substring($SourceDir.Length).TrimStart('\', '/')
+                $relative = $relative -replace '\\', '/'
                 $entry = $archive.CreateEntry(
-                    $file.Name, [System.IO.Compression.CompressionLevel]::Optimal)
+                    $relative, [System.IO.Compression.CompressionLevel]::Optimal)
                 $entry.LastWriteTime = $fixedTime
                 $entryStream = $entry.Open()
                 try {

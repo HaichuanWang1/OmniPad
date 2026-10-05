@@ -15,10 +15,12 @@ r"""tcp_server 回归测试：分帧、连接生命周期。
 """
 import json
 import socket
+import struct
 import threading
 import time
 import unittest
 
+import state
 import tcp_server
 
 
@@ -345,6 +347,71 @@ def _wait_for_port(server, timeout=5.0):
                 return port
         time.sleep(0.01)
     raise AssertionError("服务端未能在 5 秒内开始监听")
+
+
+class DisconnectReasonTest(unittest.TestCase):
+    """断开原因必须都能翻译成人话。
+
+    状态机与界面靠 `DISCONNECT_REASON_TEXT` 把机器可读的原因变成用户看得懂的
+    文字。加了新原因却忘了加文案，界面上就会冒出 `connection_reset` 这种原始值。
+    """
+
+    def test_every_reason_constant_has_user_facing_text(self):
+        reasons = {
+            name: getattr(tcp_server, name)
+            for name in dir(tcp_server)
+            if name.startswith("REASON_")
+        }
+        self.assertGreaterEqual(len(reasons), 5)
+        for name, reason in reasons.items():
+            with self.subTest(constant=name):
+                self.assertIn(reason, state.DISCONNECT_REASON_TEXT,
+                              f"{name} 没有对应的中文说明")
+
+    def test_reasons_are_unique(self):
+        reasons = [getattr(tcp_server, n) for n in dir(tcp_server)
+                   if n.startswith("REASON_")]
+        self.assertEqual(len(reasons), len(set(reasons)))
+
+    def test_abortive_close_reports_a_distinguishable_reason(self):
+        """带 SO_LINGER(0) 的 close 会发 RST。
+
+        Windows 上对端「正常关闭」与「异常关闭」在 recv 里长得不一样
+        （b"" vs ConnectionResetError）。分开报，用户才分得清是手机退出了
+        还是链路被掐了。
+        """
+        events = []
+        server = tcp_server.TcpServer(
+            host="127.0.0.1", port=0,
+            on_event=lambda kind, **fields: events.append((kind, fields)),
+        )
+        threading.Thread(target=server.start, daemon=True).start()
+        port = _wait_for_port(server)
+
+        try:
+            sock = socket.create_connection(("127.0.0.1", port), timeout=5)
+            deadline = time.time() + 5
+            while time.time() < deadline and not any(
+                k == "connected" for k, _ in events
+            ):
+                time.sleep(0.01)
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER,
+                            struct.pack("hh", 1, 0))
+            sock.close()
+
+            deadline = time.time() + 5
+            while time.time() < deadline and not any(
+                k == "disconnected" for k, _ in events
+            ):
+                time.sleep(0.01)
+        finally:
+            server.stop()
+
+        reasons = [f["reason"] for k, f in events if k == "disconnected"]
+        self.assertEqual(len(reasons), 1)
+        self.assertIn(reasons[0],
+                      (tcp_server.REASON_CONNECTION_RESET,
+                       tcp_server.REASON_CLIENT_CLOSED))
 
 
 class BoundPortTest(unittest.TestCase):
