@@ -26,8 +26,32 @@ jobs:
         working-directory: server
         run: python test_handlers.py
 
+      # 打包脚本是发布流程的唯一入口，它坏了整个发布就不可信。
+      - name: 打包脚本冒烟测试
+        shell: pwsh
+        run: |
+          ./scripts/package.ps1 -Target server
+
+          $zip = Get-ChildItem dist/omnipad-server-v*.zip
+          if (-not $zip) { throw '打包脚本没有产出 dist/omnipad-server-v<版本>.zip' }
+          Write-Host "产出：$($zip.Name)（$($zip.Length) 字节）"
+
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $archive = [System.IO.Compression.ZipFile]::OpenRead($zip.FullName)
+          $names = $archive.Entries | ForEach-Object { $_.FullName }
+          $archive.Dispose()
+
+          # 回归守卫：历史上每个发布包都混进了 test_client.py 和 0 字节的 __init__.py
+          $leaked = $names | Where-Object { $_ -match '^test_.*\.py$' -or $_ -eq '__init__.py' }
+          if ($leaked) { throw "发布包混入了开发文件：$($leaked -join ', ')" }
+
+          foreach ($required in @('server.py', 'server_ui.py', 'handlers.py', 'pairing.py', 'tcp_server.py', 'input_controller.py', 'protocol.py')) {
+            if ($names -notcontains $required) { throw "发布包缺少 $required" }
+          }
+          Write-Host "内容检查通过：$($names.Count) 个条目"
+
   client:
-    name: Client compile
+    name: Client compile & test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -47,3 +71,16 @@ jobs:
       - name: 编译 release（不签名）
         working-directory: client
         run: ./gradlew :app:compileReleaseKotlin --console=plain --stacktrace
+
+      # 协议编解码与连接层的单元测试，跑在普通 JVM 上
+      - name: 单元测试
+        working-directory: client
+        run: ./gradlew :app:testDebugUnitTest --console=plain --stacktrace
+
+      - name: 上传测试报告
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: client-test-report
+          path: client/app/build/reports/tests/testDebugUnitTest
+          if-no-files-found: ignore

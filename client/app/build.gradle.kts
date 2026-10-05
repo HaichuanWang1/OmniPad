@@ -16,6 +16,26 @@ val keystoreProperties = Properties().apply {
 }
 val hasSigningConfig = keystoreProperties.getProperty("storeFile") != null
 
+// 版本号唯一来源是仓库根目录的 VERSION，scripts/package.ps1 也读同一个文件。
+// 此前 versionName、APK 文件名、zip 文件名各写一遍，已经漂移过一次
+// （发布资产里出现了 Gradle 原始输出名 app-release.apk）。
+val versionFile = rootProject.projectDir.parentFile.resolve("VERSION")
+val appVersionName = versionFile.takeIf { it.isFile }
+    ?.readText()?.trim()
+    ?.takeIf { it.isNotEmpty() }
+    ?: error("读不到版本号：$versionFile")
+
+// versionCode 必须单调递增，规则：
+//   1.0.0-beta1.6 -> 6       沿用既有 beta 发布习惯（beta1.5 的 versionCode 就是 5）
+//   1.0.0         -> 10000   正式版改用 major*10000 + minor*100 + patch
+// 这样 beta 转正式版时数值自然抬升，不会出现新版本装不上去的情况。
+val appVersionCode = Regex("""-beta\d+\.(\d+)$""").find(appVersionName)
+    ?.groupValues?.get(1)?.toInt()
+    ?: appVersionName.split('.').let { parts ->
+        val (major, minor, patch) = List(3) { parts.getOrNull(it)?.toIntOrNull() ?: 0 }
+        major * 10000 + minor * 100 + patch
+    }
+
 android {
     namespace = "com.omnipad.client"
     compileSdk = 34
@@ -24,8 +44,8 @@ android {
         applicationId = "com.omnipad.client"
         minSdk = 26
         targetSdk = 34
-        versionCode = 6
-        versionName = "1.0.0-beta1.6"
+        versionCode = appVersionCode
+        versionName = appVersionName
     }
 
     signingConfigs {
@@ -85,4 +105,10 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.8.2")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+
+    testImplementation("junit:junit:4.13.2")
+    // 单元测试跑在普通 JVM 上，android.jar 里的 org.json 是空壳（调用即抛
+    // "not mocked"），所以补一份参考实现。它排在 mockable-android.jar 之前，
+    // 因此测试里拿到的是真实可用的 JSONObject。
+    testImplementation("org.json:json:20231013")
 }

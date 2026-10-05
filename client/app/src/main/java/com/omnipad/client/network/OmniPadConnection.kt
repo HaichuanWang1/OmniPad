@@ -16,14 +16,31 @@ enum class ConnectionState {
     DISCONNECTED, CONNECTING, CONNECTED, FAILED
 }
 
-class OmniPadConnection(private val scope: CoroutineScope) {
+class OmniPadConnection(
+    private val scope: CoroutineScope,
+    /**
+     * 心跳发送间隔，默认与 docs/protocol.md 一致。
+     *
+     * 提成构造参数只为可测性：按默认值验证「连续丢 3 次心跳后断开」要跑满 15 秒，
+     * 单元测试里缩短到毫秒级即可覆盖同一条逻辑。
+     */
+    private val heartbeatIntervalMs: Long = HEARTBEAT_INTERVAL_MS,
+
+    /**
+     * 回调 UI 用的调度器。
+     *
+     * 注入而不是直接用 Dispatchers.Main：单元测试里可以换成直接执行的调度器，
+     * 既不必启动 Looper，也不用依赖 Dispatchers.setMain 这类全局状态。
+     */
+    private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
+) {
 
     companion object {
         /** 心跳发送间隔，与 docs/protocol.md 一致。 */
-        private const val HEARTBEAT_INTERVAL_MS = 5000L
+        const val HEARTBEAT_INTERVAL_MS = 5000L
 
         /** 连续丢失多少次心跳后判定连接已断（5s × 3 = 15s，与文档一致）。 */
-        private const val MAX_MISSED_HEARTBEATS = 3
+        const val MAX_MISSED_HEARTBEATS = 3
     }
 
     private val _connectionState = MutableStateFlow(ConnectionState.DISCONNECTED)
@@ -96,7 +113,7 @@ class OmniPadConnection(private val scope: CoroutineScope) {
                     if (msg is HandshakeAck) {
                         _connectionState.value = ConnectionState.CONNECTED
                         startWriter()
-                        withContext(Dispatchers.Main) { onConnected() }
+                        withContext(mainDispatcher) { onConnected() }
                         startHeartbeat()
                         startReader()
                     } else {
@@ -112,13 +129,13 @@ class OmniPadConnection(private val scope: CoroutineScope) {
                         disconnect()
                         _connectionState.value = ConnectionState.FAILED
                         _lastError.value = notice
-                        withContext(Dispatchers.Main) { onFailed(notice) }
+                        withContext(mainDispatcher) { onFailed(notice) }
                     }
                 } else {
                     disconnect()
                     _connectionState.value = ConnectionState.FAILED
                     _lastError.value = ConnectionNotice.ServerNoResponse
-                    withContext(Dispatchers.Main) {
+                    withContext(mainDispatcher) {
                         onFailed(ConnectionNotice.ServerNoResponse)
                     }
                 }
@@ -127,7 +144,7 @@ class OmniPadConnection(private val scope: CoroutineScope) {
                 _connectionState.value = ConnectionState.FAILED
                 val notice = ConnectionNotice.ConnectFailed(e.message)
                 _lastError.value = notice
-                withContext(Dispatchers.Main) { onFailed(notice) }
+                withContext(mainDispatcher) { onFailed(notice) }
             }
         }
     }
@@ -201,7 +218,7 @@ class OmniPadConnection(private val scope: CoroutineScope) {
                     missedHeartbeats = 0   // 用户关闭了自动断开，继续尝试
                 }
                 sendMessage(Heartbeat)
-                delay(HEARTBEAT_INTERVAL_MS)
+                delay(heartbeatIntervalMs)
             }
         }
     }
@@ -216,7 +233,7 @@ class OmniPadConnection(private val scope: CoroutineScope) {
                         if (msg != null) {
                             // 心跳确认在连接层内部消化，UI 无需关心
                             if (msg is HeartbeatAck) missedHeartbeats = 0
-                            withContext(Dispatchers.Main) {
+                            withContext(mainDispatcher) {
                                 onMessage?.invoke(msg)
                             }
                         }
