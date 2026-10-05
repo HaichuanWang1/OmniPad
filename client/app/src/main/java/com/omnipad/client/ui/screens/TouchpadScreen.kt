@@ -51,8 +51,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import com.omnipad.client.R
 import com.omnipad.client.network.Keyboard
 import com.omnipad.client.network.MouseClick
 import com.omnipad.client.network.MouseMove
@@ -160,7 +162,7 @@ fun TouchpadScreen(
             ) {
                 ButtonGroup(
                     items = listOf(
-                        "左键" to {
+                        ButtonSpec(stringResource(R.string.mouse_left), "left") {
                             val held = heldMouseButton
                             if (held == "left") {
                                 heldMouseButton = null
@@ -170,7 +172,7 @@ fun TouchpadScreen(
                                 onSendMessage(MouseClick("left", "down"))
                             }
                         },
-                        "右键" to {
+                        ButtonSpec(stringResource(R.string.mouse_right), "right") {
                             val held = heldMouseButton
                             if (held == "right") {
                                 heldMouseButton = null
@@ -180,7 +182,7 @@ fun TouchpadScreen(
                                 onSendMessage(MouseClick("right", "down"))
                             }
                         },
-                        "中键" to {
+                        ButtonSpec(stringResource(R.string.mouse_middle), "middle") {
                             val held = heldMouseButton
                             if (held == "middle") {
                                 heldMouseButton = null
@@ -199,8 +201,8 @@ fun TouchpadScreen(
 
                 ButtonGroup(
                     items = listOf(
-                        "△" to { onSendMessage(Scroll(1)) },
-                        "▽" to { onSendMessage(Scroll(-1)) },
+                        ButtonSpec("△") { onSendMessage(Scroll(1)) },
+                        ButtonSpec("▽") { onSendMessage(Scroll(-1)) },
                     ),
                     modifier = Modifier.width(120.dp),
                 )
@@ -213,7 +215,7 @@ fun TouchpadScreen(
                 OutlinedTextField(
                     value = textInput,
                     onValueChange = { textInput = it },
-                    placeholder = { Text("输入文字发送到电脑") },
+                    placeholder = { Text(stringResource(R.string.touchpad_text_placeholder)) },
                     singleLine = true,
                     modifier = Modifier.weight(1f),
                     shape = MaterialTheme.shapes.medium,
@@ -254,9 +256,10 @@ fun TouchpadScreen(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                listOf("Enter", "Tab", "Esc", "退格").forEach { label ->
+                val backspaceLabel = stringResource(R.string.touchpad_backspace)
+                listOf("Enter", "Tab", "Esc", backspaceLabel).forEach { label ->
                     val key = when (label) {
-                        "退格" -> "backspace"
+                        backspaceLabel -> "backspace"
                         "Esc" -> "escape"
                         else -> label.lowercase()
                     }
@@ -455,13 +458,16 @@ fun TouchpadScreen(
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
-                        text = if (isPressed) "松开以停止拖动" else "触摸板",
+                        text = stringResource(
+                            if (isPressed) R.string.touchpad_dragging
+                            else R.string.touchpad_idle
+                        ),
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        text = "点击=左键 长按=右键 拖动=移动 双指=滚动",
+                        text = stringResource(R.string.touchpad_hint),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                     )
@@ -473,9 +479,21 @@ fun TouchpadScreen(
     }
 }
 
+/**
+ * 一个按钮的描述。
+ *
+ * [key] 是协议里的按键标识（如 "left"），与显示文案解耦 —— 原先靠显示文案
+ * 反查按键，文案一旦被翻译或改动就会失效。
+ */
+private data class ButtonSpec(
+    val label: String,
+    val key: String? = null,
+    val onClick: () -> Unit,
+)
+
 @Composable
 private fun ButtonGroup(
-    items: List<Pair<String, () -> Unit>>,
+    items: List<ButtonSpec>,
     modifier: Modifier = Modifier,
     heldKey: String? = null,
 ) {
@@ -483,13 +501,11 @@ private fun ButtonGroup(
         modifier = modifier,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        items.forEach { (label, onClick) ->
+        items.forEach { spec ->
             val circle = items.size <= 3
-            val isHeld = label == "左键" && heldKey == "left" ||
-                    label == "右键" && heldKey == "right" ||
-                    label == "中键" && heldKey == "middle"
+            val isHeld = spec.key != null && spec.key == heldKey
             FilledIconButton(
-                onClick = onClick,
+                onClick = spec.onClick,
                 modifier = Modifier.weight(1f).height(48.dp),
                 shape = if (circle) CircleShape else MaterialTheme.shapes.small,
                 colors = if (isHeld) {
@@ -502,7 +518,7 @@ private fun ButtonGroup(
                 },
             ) {
                 Text(
-                    label,
+                    spec.label,
                     style = MaterialTheme.typography.labelLarge,
                 )
             }

@@ -1,5 +1,6 @@
 package com.omnipad.client
 
+import android.content.Context
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -14,6 +15,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.lifecycleScope
+import com.omnipad.client.network.ConnectionNotice
 import com.omnipad.client.network.ConnectionState
 import com.omnipad.client.network.Error
 import com.omnipad.client.network.OmniPadConnection
@@ -21,6 +23,31 @@ import com.omnipad.client.network.RecentHostsStore
 import com.omnipad.client.ui.screens.ConnectScreen
 import com.omnipad.client.ui.screens.TouchpadScreen
 import com.omnipad.client.ui.theme.OmniPadTheme
+
+/** 把连接层的事件映射成用户可读的文案。 */
+private fun noticeToText(context: Context, notice: ConnectionNotice): String = when (notice) {
+    is ConnectionNotice.ServerError ->
+        context.getString(R.string.error_server, notice.message)
+
+    ConnectionNotice.AuthFailed ->
+        context.getString(R.string.error_auth_failed)
+
+    ConnectionNotice.VersionMismatch ->
+        context.getString(R.string.error_version_mismatch)
+
+    ConnectionNotice.HandshakeFailed ->
+        context.getString(R.string.error_handshake_failed)
+
+    ConnectionNotice.ServerNoResponse ->
+        context.getString(R.string.error_server_no_response)
+
+    is ConnectionNotice.ConnectFailed -> notice.detail?.let {
+        context.getString(R.string.error_connect_failed_detail, it)
+    } ?: context.getString(R.string.error_connect_failed)
+
+    ConnectionNotice.HeartbeatTimeout ->
+        context.getString(R.string.error_heartbeat_timeout)
+}
 
 class MainActivity : ComponentActivity() {
 
@@ -46,7 +73,9 @@ class MainActivity : ComponentActivity() {
                         if (msg is Error) {
                             Toast.makeText(
                                 this@MainActivity,
-                                "服务器错误: ${msg.message}",
+                                this@MainActivity.getString(
+                                    R.string.error_server, msg.message,
+                                ),
                                 Toast.LENGTH_SHORT,
                             ).show()
                         }
@@ -58,10 +87,15 @@ class MainActivity : ComponentActivity() {
                     connection.autoDisconnect = autoDisconnect
                 }
 
-                LaunchedEffect(lastError) {
-                    val message = lastError ?: return@LaunchedEffect
-                    Toast.makeText(this@MainActivity, message, Toast.LENGTH_LONG).show()
-                    connection.clearLastError()
+                // 文案在组合里解析好再交给 effect，effect 内部不能调用 @Composable
+                val errorText = lastError?.let { noticeToText(this@MainActivity, it) }
+                LaunchedEffect(errorText) {
+                    if (errorText != null) {
+                        Toast.makeText(
+                            this@MainActivity, errorText, Toast.LENGTH_LONG,
+                        ).show()
+                        connection.clearLastError()
+                    }
                 }
 
                 if (state == ConnectionState.CONNECTED) {

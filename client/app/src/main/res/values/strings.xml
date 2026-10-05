@@ -1,4 +1,39 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">OmniPad</string>
+
+    <!-- 连接页 -->
+    <string name="connect_tagline">远程控制你的电脑</string>
+    <string name="connect_host_label">服务器地址</string>
+    <string name="connect_port_label">端口</string>
+    <string name="connect_token_label">配对令牌</string>
+    <string name="connect_token_placeholder">服务端窗口顶部显示</string>
+    <string name="connect_recent_hosts">历史连接</string>
+    <string name="connect_action">连接</string>
+    <string name="connect_failed_hint">连接失败，请检查地址、端口和配对令牌</string>
+    <string name="connect_author">超重氢</string>
+    <string name="connect_delete_title">删除记录</string>
+    <string name="connect_delete_message">确定要删除 %1$s:%2$d 吗？</string>
+    <string name="action_delete">删除</string>
+    <string name="action_cancel">取消</string>
+
+    <!-- 触控板 -->
+    <string name="touchpad_idle">触摸板</string>
+    <string name="touchpad_dragging">松开以停止拖动</string>
+    <string name="touchpad_hint">点击=左键 长按=右键 拖动=移动 双指=滚动</string>
+    <string name="touchpad_text_placeholder">输入文字发送到电脑</string>
+    <string name="touchpad_backspace">退格</string>
+    <string name="mouse_left">左键</string>
+    <string name="mouse_right">右键</string>
+    <string name="mouse_middle">中键</string>
+
+    <!-- 连接状态提示 -->
+    <string name="error_server">服务器错误: %1$s</string>
+    <string name="error_auth_failed">配对失败：令牌不正确</string>
+    <string name="error_version_mismatch">协议版本不匹配</string>
+    <string name="error_handshake_failed">握手失败</string>
+    <string name="error_server_no_response">服务器无响应</string>
+    <string name="error_connect_failed">连接失败</string>
+    <string name="error_connect_failed_detail">连接失败：%1$s</string>
+    <string name="error_heartbeat_timeout">连接已断开：服务器无响应</string>
 </resources>

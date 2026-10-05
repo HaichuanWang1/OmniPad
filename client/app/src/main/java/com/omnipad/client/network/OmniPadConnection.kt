@@ -29,10 +29,10 @@ class OmniPadConnection(private val scope: CoroutineScope) {
     private val _connectionState = MutableStateFlow(ConnectionState.DISCONNECTED)
     val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
 
-    private val _lastError = MutableStateFlow<String?>(null)
+    private val _lastError = MutableStateFlow<ConnectionNotice?>(null)
 
-    /** 最近一次需要提示用户的错误；UI 展示后应调用 [clearLastError]。 */
-    val lastError: StateFlow<String?> = _lastError.asStateFlow()
+    /** 最近一次需要提示用户的连接事件；UI 展示后应调用 [clearLastError]。 */
+    val lastError: StateFlow<ConnectionNotice?> = _lastError.asStateFlow()
 
     /**
      * 是否在连续丢失心跳后自动断开，由 UI 同步用户开关。
@@ -69,7 +69,7 @@ class OmniPadConnection(private val scope: CoroutineScope) {
         port: Int,
         token: String,
         onConnected: () -> Unit = {},
-        onFailed: (String) -> Unit = {},
+        onFailed: (ConnectionNotice) -> Unit = {},
     ) {
         if (_connectionState.value != ConnectionState.DISCONNECTED && _connectionState.value != ConnectionState.FAILED) return
 
@@ -100,29 +100,34 @@ class OmniPadConnection(private val scope: CoroutineScope) {
                         startHeartbeat()
                         startReader()
                     } else {
-                        // 服务端拒绝时会先回一条 error 再断开，把原因透出给用户
+                        // 服务端拒绝时会先回一条 error 再断开
                         val err = msg as? Error
-                        val reason = if (err == null) {
-                            "握手失败"
+                        val notice = if (err == null) {
+                            ConnectionNotice.HandshakeFailed
                         } else when (err.code) {
-                            "AUTH_FAILED" -> "配对失败：令牌不正确"
-                            "VERSION_MISMATCH" -> "协议版本不匹配"
-                            else -> "握手失败：${err.message}"
+                            "AUTH_FAILED" -> ConnectionNotice.AuthFailed
+                            "VERSION_MISMATCH" -> ConnectionNotice.VersionMismatch
+                            else -> ConnectionNotice.ServerError(err.message)
                         }
                         disconnect()
                         _connectionState.value = ConnectionState.FAILED
-                        _lastError.value = reason
-                        withContext(Dispatchers.Main) { onFailed(reason) }
+                        _lastError.value = notice
+                        withContext(Dispatchers.Main) { onFailed(notice) }
                     }
                 } else {
                     disconnect()
                     _connectionState.value = ConnectionState.FAILED
-                    withContext(Dispatchers.Main) { onFailed("服务器无响应") }
+                    _lastError.value = ConnectionNotice.ServerNoResponse
+                    withContext(Dispatchers.Main) {
+                        onFailed(ConnectionNotice.ServerNoResponse)
+                    }
                 }
             } catch (e: Exception) {
                 disconnect()
                 _connectionState.value = ConnectionState.FAILED
-                withContext(Dispatchers.Main) { onFailed(e.message ?: "连接失败") }
+                val notice = ConnectionNotice.ConnectFailed(e.message)
+                _lastError.value = notice
+                withContext(Dispatchers.Main) { onFailed(notice) }
             }
         }
     }
@@ -189,7 +194,7 @@ class OmniPadConnection(private val scope: CoroutineScope) {
                 missedHeartbeats++
                 if (missedHeartbeats > MAX_MISSED_HEARTBEATS) {
                     if (autoDisconnect) {
-                        _lastError.value = "连接已断开：服务器无响应"
+                        _lastError.value = ConnectionNotice.HeartbeatTimeout
                         disconnect()
                         break
                     }

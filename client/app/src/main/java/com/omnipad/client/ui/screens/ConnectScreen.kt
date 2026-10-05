@@ -41,12 +41,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
+import com.omnipad.client.R
 import com.omnipad.client.network.ConnectionState
 import com.omnipad.client.network.RecentHost
 
@@ -115,7 +117,7 @@ fun ConnectScreen(
                 Spacer(Modifier.height(8.dp))
 
                 Text(
-                    text = "远程控制你的电脑",
+                    text = stringResource(R.string.connect_tagline),
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
@@ -126,7 +128,7 @@ fun ConnectScreen(
                 OutlinedTextField(
                     value = host,
                     onValueChange = { host = it },
-                    label = { Text("服务器地址") },
+                    label = { Text(stringResource(R.string.connect_host_label)) },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Uri,
@@ -142,7 +144,7 @@ fun ConnectScreen(
                 OutlinedTextField(
                     value = port,
                     onValueChange = { port = it.filter { c -> c.isDigit() } },
-                    label = { Text("端口") },
+                    label = { Text(stringResource(R.string.connect_port_label)) },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Number,
@@ -158,8 +160,8 @@ fun ConnectScreen(
                 OutlinedTextField(
                     value = token,
                     onValueChange = { token = it },
-                    label = { Text("配对令牌") },
-                    placeholder = { Text("服务端窗口顶部显示") },
+                    label = { Text(stringResource(R.string.connect_token_label)) },
+                    placeholder = { Text(stringResource(R.string.connect_token_placeholder)) },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Ascii,
@@ -179,7 +181,7 @@ fun ConnectScreen(
                 if (recentHosts.isNotEmpty()) {
                     Spacer(Modifier.height(20.dp))
                     Text(
-                        text = "历史连接",
+                        text = stringResource(R.string.connect_recent_hosts),
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.fillMaxWidth(),
@@ -232,7 +234,7 @@ fun ConnectScreen(
                         )
                     } else {
                         Text(
-                            "连接",
+                            stringResource(R.string.connect_action),
                             style = MaterialTheme.typography.titleMedium,
                         )
                     }
@@ -241,7 +243,7 @@ fun ConnectScreen(
                 if (connectionState == ConnectionState.FAILED) {
                     Spacer(Modifier.height(16.dp))
                     Text(
-                        text = "连接失败，请检查地址、端口和配对令牌",
+                        text = stringResource(R.string.connect_failed_hint),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.error,
                         textAlign = TextAlign.Center,
@@ -259,7 +261,7 @@ fun ConnectScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "超重氢",
+                text = stringResource(R.string.connect_author),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -283,19 +285,30 @@ fun ConnectScreen(
     if (deleteTarget != null) {
         AlertDialog(
             onDismissRequest = { deleteTarget = null },
-            title = { Text("删除记录") },
-            text = { Text("确定要删除 ${deleteTarget!!.host}:${deleteTarget!!.port} 吗？") },
+            title = { Text(stringResource(R.string.connect_delete_title)) },
+            text = {
+                Text(
+                    stringResource(
+                        R.string.connect_delete_message,
+                        deleteTarget!!.host,
+                        deleteTarget!!.port,
+                    )
+                )
+            },
             confirmButton = {
                 TextButton(onClick = {
                     onDeleteHost(deleteTarget!!.host, deleteTarget!!.port)
                     deleteTarget = null
                 }) {
-                    Text("删除", color = MaterialTheme.colorScheme.error)
+                    Text(
+                        stringResource(R.string.action_delete),
+                        color = MaterialTheme.colorScheme.error,
+                    )
                 }
             },
             dismissButton = {
                 TextButton(onClick = { deleteTarget = null }) {
-                    Text("取消")
+                    Text(stringResource(R.string.action_cancel))
                 }
             },
         )

@@ -231,7 +231,11 @@ git 历史显示「点击被拖动吃掉」「双指滚动误触发」这类问�
 
 `strings.xml` 只有 `app_name`，其余文案全硬编码在 Compose 里。
 
-- [ ] 文案入 strings.xml
+- [x] 文案入 strings.xml：32 处全部外提，Kotlin 源码中已无中文字面量
+- [x] 顺带修掉两个隐患：
+      `ButtonGroup` 原先靠**显示文案**反查按键（`label == "左键" && heldKey == "left"`），
+      文案一改就失效，现改为显式的 `ButtonSpec.key`；
+      连接层不再持有 UI 文案，改产出类型化的 `ConnectionNotice`，由 UI 映射到资源
 
 ---
 
@@ -330,5 +334,10 @@ beta1.6 是异类（7 个版本里 5 个遵循约定）。约定已写进 `AGENT
 ### 第四批（卫生）
 
 - [x] 10. 更新 `AGENTS.md` / `README.md` 结构图与阶段标注；发布产物归档 `dist/`
-- [ ] 11. 文案入 `strings.xml`
-- [ ] 剩余 P2 条目（14-16、18-20）
+- [x] 11. 文案入 `strings.xml`
+- [x] 剩余 P2 条目（14-16、18-20）
+
+---
+
+至此 fix.md 中除第 23 条（重命名 GitHub 上已发布的 beta1.6 资产，需你操作）
+外全部完成。
