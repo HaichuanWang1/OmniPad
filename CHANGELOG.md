@@ -23,6 +23,9 @@
 - 新增 CI：服务端测试（windows-latest）+ 客户端编译与单元测试（ubuntu-latest）
 
 ### 修复
+- **协议版本号递增到 1.1**：配对令牌让 `token` 变成必填，但版本号没跟着变，
+  导致旧客户端先通过版本检查、再倒在令牌校验上，用户看到 `AUTH_FAILED`
+  （以为令牌填错），真正原因却是 App 太旧。现在会正确报 `VERSION_MISMATCH`
 - 服务端收到非对象 JSON（`[1,2]`、`42`、`"hi"`）时不再因未捕获的
   `AttributeError` 直接断开连接，改为回 `INVALID_PARAMS`
 - 服务端 TCP 分片按字节缓冲，修复中文输入损坏
@@ -44,8 +47,14 @@
 - 客户端文案全部外提到 `strings.xml`
 
 ### 文档与工程
+- 升级到 **Gradle 8.13 + AGP 8.13.2**，恢复 release lint 门禁 ——
+  此前 AGP 8.2.0 的 lint 无法解析 SDK 中 `android-37.0` 这类平台目录名，
+  会在 `lintVitalAnalyzeRelease` 抛 `NumberFormatException`，门禁一直被关着
 - 版本号统一到仓库根目录 `VERSION`，Gradle 与打包脚本共用，消除命名漂移
-- 修正 README 中不存在 `server_ui.exe` 的说明，补上配对令牌的使用步骤
+- 修正 README 中不存在 `server_ui.exe` 的说明，补上配对令牌的使用步骤；
+  标题与下载说明不再钉死版本号（此前已漂移两次）
+- 新增 `.editorconfig`
+- 新增协议版本一致性守卫，自动比对服务端常量、客户端默认值与文档三处
 - `dist/` 发布产物不再入库，改由 GitHub Release 分发
 - 补上缺失的 `gradlew` 与 `.gitattributes`，修复 CI 客户端任务
 

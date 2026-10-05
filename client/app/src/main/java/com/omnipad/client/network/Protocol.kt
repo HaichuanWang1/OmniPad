@@ -18,7 +18,12 @@ private fun jsonMessage(type: String, vararg fields: Pair<String, Any>): String 
     return obj.toString()
 }
 
-data class Handshake(val version: String = "1.0", val token: String = "") : OmniPadMessage() {
+/**
+ * 握手请求。version 必须与服务端 `handlers.PROTOCOL_VERSION` 一致，
+ * 以及 docs/protocol.md 的标题 —— 三处漂移会被
+ * `server/test_handlers.py` 的 ProtocolVersionConformanceTest 抓住。
+ */
+data class Handshake(val version: String = "1.1", val token: String = "") : OmniPadMessage() {
     override fun toJson() = jsonMessage(
         "handshake",
         "version" to version,
@@ -26,7 +31,7 @@ data class Handshake(val version: String = "1.0", val token: String = "") : Omni
     )
 }
 
-/** 服务端握手确认。version 供日志与将来的版本协商使用。 */
+/** 服务端握手确认。version 目前只用于日志与排查，版本校验已在请求侧完成。 */
 data class HandshakeAck(val version: String) : OmniPadMessage() {
     override fun toJson() = jsonMessage("handshake_ack", "version" to version)
 }

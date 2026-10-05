@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://omnipad.dev/schema.json",
   "title": "OmniPad Protocol",
-  "description": "JSON Schema for OmniPad TCP messages v1.0",
+  "description": "JSON Schema for OmniPad TCP messages v1.1",
   "oneOf": [
     {
       "$id": "#handshake",

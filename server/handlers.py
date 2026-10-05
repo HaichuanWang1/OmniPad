@@ -15,7 +15,11 @@ from protocol import InvalidParams, handler, send_json, send_error
 
 logger = logging.getLogger("OmniPad")
 
-PROTOCOL_VERSION = "1.0"
+# 协议版本号。1.1 起握手强制要求 token（1.0 不带），属破坏性变更，故递增。
+#
+# 这个值在仓库里出现三处：本文件、client 的 Protocol.kt、docs/protocol.md。
+# 跨语言没法共享常量，一致性由 test_handlers.ProtocolVersionConformanceTest 盯着。
+PROTOCOL_VERSION = "1.1"
 
 MOUSE_BUTTONS = ("left", "right", "middle")
 MOUSE_ACTIONS = ("down", "up", "click")

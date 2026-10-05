@@ -5,6 +5,7 @@
 """
 import json
 import os
+import re
 import socket
 import tempfile
 import threading
@@ -47,40 +48,40 @@ class HandshakeTokenTest(unittest.TestCase):
 
     def test_correct_token_accepted(self):
         keep, resp = self._handshake(
-            {"type": "handshake", "version": "1.0", "token": self.TOKEN}
+            {"type": "handshake", "version": handlers.PROTOCOL_VERSION, "token": self.TOKEN}
         )
         self.assertTrue(keep)
-        self.assertEqual(resp, {"type": "handshake_ack", "version": "1.0"})
+        self.assertEqual(resp, {"type": "handshake_ack", "version": handlers.PROTOCOL_VERSION})
 
     def test_token_is_case_insensitive(self):
         keep, resp = self._handshake(
-            {"type": "handshake", "version": "1.0", "token": self.TOKEN.lower()}
+            {"type": "handshake", "version": handlers.PROTOCOL_VERSION, "token": self.TOKEN.lower()}
         )
         self.assertTrue(keep)
         self.assertEqual(resp["type"], "handshake_ack")
 
     def test_token_is_trimmed(self):
         keep, _ = self._handshake(
-            {"type": "handshake", "version": "1.0", "token": f"  {self.TOKEN}  "}
+            {"type": "handshake", "version": handlers.PROTOCOL_VERSION, "token": f"  {self.TOKEN}  "}
         )
         self.assertTrue(keep)
 
     def test_wrong_token_rejected(self):
         keep, resp = self._handshake(
-            {"type": "handshake", "version": "1.0", "token": "WRONG123"}
+            {"type": "handshake", "version": handlers.PROTOCOL_VERSION, "token": "WRONG123"}
         )
         self.assertFalse(keep, "错误令牌必须要求断开")
         self.assertEqual(resp["type"], "error")
         self.assertEqual(resp["code"], "AUTH_FAILED")
 
     def test_missing_token_rejected(self):
-        keep, resp = self._handshake({"type": "handshake", "version": "1.0"})
+        keep, resp = self._handshake({"type": "handshake", "version": handlers.PROTOCOL_VERSION})
         self.assertFalse(keep)
         self.assertEqual(resp["code"], "AUTH_FAILED")
 
     def test_empty_token_rejected(self):
         keep, resp = self._handshake(
-            {"type": "handshake", "version": "1.0", "token": ""}
+            {"type": "handshake", "version": handlers.PROTOCOL_VERSION, "token": ""}
         )
         self.assertFalse(keep)
         self.assertEqual(resp["code"], "AUTH_FAILED")
@@ -96,7 +97,7 @@ class HandshakeTokenTest(unittest.TestCase):
     def test_disabled_token_skips_check(self):
         """set_pairing_token(None) 关闭校验，仅用于测试环境。"""
         handlers.set_pairing_token(None)
-        keep, resp = self._handshake({"type": "handshake", "version": "1.0"})
+        keep, resp = self._handshake({"type": "handshake", "version": handlers.PROTOCOL_VERSION})
         self.assertTrue(keep)
         self.assertEqual(resp["type"], "handshake_ack")
 
@@ -186,12 +187,12 @@ class PairingIntegrationTest(unittest.TestCase):
             sock.settimeout(5)
             sock.sendall(
                 json.dumps(
-                    {"type": "handshake", "version": "1.0", "token": self.TOKEN}
+                    {"type": "handshake", "version": handlers.PROTOCOL_VERSION, "token": self.TOKEN}
                 ).encode("utf-8") + b"\n"
             )
             self.assertEqual(
                 self._read_line(sock),
-                {"type": "handshake_ack", "version": "1.0"},
+                {"type": "handshake_ack", "version": handlers.PROTOCOL_VERSION},
             )
 
     def test_wrong_token_gets_auth_failed_then_disconnect(self):
@@ -199,7 +200,7 @@ class PairingIntegrationTest(unittest.TestCase):
             sock.settimeout(5)
             sock.sendall(
                 json.dumps(
-                    {"type": "handshake", "version": "1.0", "token": "WRONG123"}
+                    {"type": "handshake", "version": handlers.PROTOCOL_VERSION, "token": "WRONG123"}
                 ).encode("utf-8") + b"\n"
             )
             resp = self._read_line(sock)
@@ -396,6 +397,50 @@ class SchemaConformanceTest(unittest.TestCase):
     def test_every_handler_type_is_covered(self):
         missing = set(protocol.HANDLER_REGISTRY) - set(protocol.ALLOWED_FIELDS)
         self.assertEqual(missing, set(), f"这些消息类型没有登记允许字段: {missing}")
+
+
+class ProtocolVersionConformanceTest(unittest.TestCase):
+    """协议版本号散落在服务端、客户端与文档三处，必须有东西盯着它们别漂移。
+
+    三处各写一遍是没办法的事：跨语言没法共享常量，而且发布包里不含 docs/。
+    但版本对不上时客户端只会收到一句 VERSION_MISMATCH，排查成本不低 ——
+    不如在测试里直接拦住。1.0 -> 1.1 就是因为令牌变成必填而漏改过一次。
+    """
+
+    REPO_ROOT = os.path.abspath(
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+    )
+
+    def _read(self, *parts):
+        with open(os.path.join(self.REPO_ROOT, *parts), encoding="utf-8") as f:
+            return f.read()
+
+    def test_protocol_md_title_matches(self):
+        text = self._read("docs", "protocol.md")
+        m = re.search(r"^#\s*OmniPad TCP 协议文档\s*v(\d+\.\d+)", text, re.MULTILINE)
+        self.assertIsNotNone(m, "docs/protocol.md 标题里找不到协议版本号")
+        self.assertEqual(m.group(1), handlers.PROTOCOL_VERSION)
+
+    def test_schema_description_matches(self):
+        schema = json.loads(self._read("docs", "schema.json"))
+        self.assertIn(
+            handlers.PROTOCOL_VERSION,
+            schema["description"],
+            "docs/schema.json 的 description 里没有当前协议版本号",
+        )
+
+    def test_client_handshake_default_matches(self):
+        text = self._read(
+            "client", "app", "src", "main", "java", "com", "omnipad", "client",
+            "network", "Protocol.kt",
+        )
+        m = re.search(r'data class Handshake\(val version: String = "(\d+\.\d+)"', text)
+        self.assertIsNotNone(m, "Protocol.kt 里找不到 Handshake 的默认版本号")
+        self.assertEqual(
+            m.group(1),
+            handlers.PROTOCOL_VERSION,
+            "客户端握手版本与服务端 PROTOCOL_VERSION 不一致",
+        )
 
 
 if __name__ == "__main__":

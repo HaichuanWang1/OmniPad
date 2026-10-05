@@ -289,7 +289,14 @@ java.lang.NumberFormatException: For input string: "37.0"
 - [x] 采用方案 A：`lint { checkReleaseBuilds = false }`
       已验证 `./gradlew :app:assembleRelease`（不带 `-x`）BUILD SUCCESSFUL，
       产出 app-release.apk 且签名有效
-- [ ] 根治：升级 AGP 到 8.13+ 后恢复该门禁
+- [x] 根治：升级到 **AGP 8.13.2 + Gradle 8.13**（Kotlin 1.9.21 保持不变即可），
+      删掉 `lint { checkReleaseBuilds = false }`，release lint 门禁恢复默认开启，
+      `assembleRelease` 不再需要任何 `-x` 参数
+
+> 升级过程中踩到一个环境坑：旧版 Gradle 8.5 的 daemon 会一直占着上一次构建产出的
+> `classes.dex`，导致新版本的 `mergeDexRelease` 删不掉目录而失败（报错是
+> 「Unable to delete directory ... being used by another process」）。
+> `gradlew --stop` 只停当前版本的 daemon，停不掉旧版本那个，需要手动结束进程。
 
 ---
 
@@ -419,11 +426,11 @@ beta1.6 是异类（7 个版本里 5 个遵循约定）。约定已写进 `AGENT
 
 ---
 
-### 🟡 32. 其余工程卫生（低优先级，均未处理）
+### 🟡 32. 其余工程卫生
 
-- **协议版本没有协商机制**：`server/handlers.py:18` 与 `docs/protocol.md` 都硬编码
-  `"1.0"`，不匹配就直接 `VERSION_MISMATCH` 断开。老客户端连新服务端会硬失败，
-  没有「降到共同版本」的余地。协议一旦要演进，这里会先卡住。
+- **协议版本号没有跟着破坏性变更递增**：配对令牌让 `token` 变成必填，
+  但 `PROTOCOL_VERSION` 仍是 `"1.0"`。后果是 beta1.6 的旧客户端会**先通过版本检查、
+  再倒在令牌校验上**，用户看到 `AUTH_FAILED`（以为令牌填错了），而真正的原因是 App 太旧。
 - **无 `.editorconfig`**：行尾已由 `.gitattributes` 管住，但缩进与字符集仍靠自觉
   （Python 4 空格 / Kotlin 4 空格 / YAML 2 空格）。
 - **未开启代码压缩与混淆**：`isMinifyEnabled = false`，也没有 `proguard-rules.pro`，
@@ -432,7 +439,14 @@ beta1.6 是异类（7 个版本里 5 个遵循约定）。约定已写进 `AGENT
   `handlers.py` 与 `tcp_server.py`。Tkinter 整体测试成本高，可先把其中的纯逻辑
   （客户端历史裁剪、地址格式化）抽成独立函数再单测。
 
-- [ ] 待办：以上四项
+- [x] 协议版本递增到 **1.1**，并加上一致性守卫：版本号在服务端常量、客户端
+      `Handshake` 默认值、文档标题与 schema description 共四处出现，跨语言没法共享
+      常量，改为由 `ProtocolVersionConformanceTest` 自动比对（已验证：故意只改文档
+      不改客户端时，该测试如期报 `'1.0' != '1.1'`）
+- [x] 明确「不做版本协商」并写明理由：双端始终一起发布，没有第三方客户端；
+      协商会引入真实协议面，收益只多版本共存时才体现
+- [x] 补 `.editorconfig`
+- [ ] 待办：R8 压缩混淆、`server_ui.py` 测试
 
 ---
 
@@ -478,13 +492,15 @@ beta1.6 是异类（7 个版本里 5 个遵循约定）。约定已写进 `AGENT
 - 第 25 条：若要发 `server_ui.exe`，需把 PyInstaller 纳入发布流程
 - 第 30 条：令牌明文传输（TLS 或明确使用边界）
 - 第 31 条：为 beta1.4 补 tag（可选）
-- 第 32 条：协议版本协商、R8 压缩混淆、`server_ui.py` 测试
+- 第 32 条：R8 压缩混淆、`server_ui.py` 测试
 
 已完成（本轮）：
 
+- 第 22 条根治：升级到 Gradle 8.13 + AGP 8.13.2，release lint 门禁恢复开启，
+  `lintVitalAnalyzeRelease` 已实际跑通
 - 第 23 条：重命名 beta1.6 的两个线上资产 —— 用 `gh api` 完成，6 个 Release 现已全部合规
 - 第 29 条：客户端断线自动重连（含状态机与 8 个用例）
-- 第 32 条中的 `.editorconfig` —— 已补，且确认仓库内无尾随空格、无缺失尾换行，不会造成 churn
+- 第 32 条中的 `.editorconfig` 与协议版本一致性守卫
 - 第 8 条中的 `additionalProperties: false` —— 已在服务端强制，并用 SchemaConformanceTest
   与 `docs/schema.json` 逐项对齐
 - 版本号递增到 `v1.0.0-beta1.7`：main 与 beta1.6 协议不兼容，继续沿用 beta1.6

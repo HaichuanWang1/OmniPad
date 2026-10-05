@@ -184,7 +184,9 @@ class OmniPadConnectionTest {
             // 握手必须排在心跳和用户消息之前，否则服务端会先看到未认证的消息。
             val hs = JSONObject(server.received[0])
             assertEquals("handshake", hs.getString("type"))
-            assertEquals("1.0", hs.getString("version"))
+            // 只断言「线上发的就是模型声明的那个版本」，具体数值由服务端
+            // ProtocolVersionConformanceTest 盯着，避免这里再写死一份。
+            assertEquals(Handshake().version, hs.getString("version"))
             assertEquals("GBGUAWW9", hs.getString("token"))
         }
     }

@@ -1,4 +1,4 @@
-# OmniPad TCP 协议文档 v1.0
+# OmniPad TCP 协议文档 v1.1
 
 ## 概述
 
@@ -22,6 +22,31 @@ OmniPad 使用 **TCP + JSON Lines** 协议进行通信。每条消息为单行 U
 
 ---
 
+## 协议版本与兼容性
+
+当前版本 **1.1**。双方必须使用**完全一致**的版本；Server 在握手时先校验版本、再校验令牌。
+
+版本号在仓库里出现三处，改动时必须同步：
+
+| 位置 | 形态 |
+|---|---|
+| `server/handlers.py` | `PROTOCOL_VERSION` |
+| `client/app/src/main/java/com/omnipad/client/network/Protocol.kt` | `Handshake.version` 的默认值 |
+| 本文档标题与 `docs/schema.json` 的 `description` | 文字 |
+
+三处的一致性由 `server/test_handlers.py` 的 `ProtocolVersionConformanceTest` 自动校验 ——
+跨语言没法共享常量，但漂移可以在测试里拦住。
+
+递增规则：**只要线上格式有变就递增**（新增必填字段、改字段语义、改取值）。
+由于双方要求版本完全一致，主次版本目前不做区分。1.0 → 1.1 就是因为 `token` 变成必填。
+
+版本不匹配时 Server 回 `VERSION_MISMATCH` 并断开，客户端应提示用户更新 App。
+
+> 为什么不做版本协商：双端始终一起发布，没有第三方客户端。协商（交换各自支持的
+> 版本列表再取交集）会引入真实的协议面，而收益只多版本共存时才体现。真需要再加不迟。
+
+---
+
 ## 握手流程
 
 1. Client 连接 Server 后，立即发送握手请求，携带配对令牌。
@@ -30,10 +55,10 @@ OmniPad 使用 **TCP + JSON Lines** 协议进行通信。每条消息为单行 U
 
 ```
 Client → Server:
-{"type":"handshake","version":"1.0","token":"K7M2P9QR"}
+{"type":"handshake","version":"1.1","token":"K7M2P9QR"}
 
 Server → Client:
-{"type":"handshake_ack","version":"1.0"}
+{"type":"handshake_ack","version":"1.1"}
 ```
 
 ### 配对令牌
@@ -49,7 +74,7 @@ Server 首次启动时随机生成一个 **8 位令牌**，持久化到 `server/
 
 ```
 Server → Client:
-{"type":"error","code":"VERSION_MISMATCH","message":"expected 1.0 got x.y"}
+{"type":"error","code":"VERSION_MISMATCH","message":"expected 1.1 got x.y"}
 ```
 
 若令牌不正确，Server 同样回复错误并关闭连接：
@@ -167,8 +192,8 @@ Server → Client:
 ## 完整消息示例
 
 ```
-{"type":"handshake","version":"1.0","token":"K7M2P9QR"}
-{"type":"handshake_ack","version":"1.0"}
+{"type":"handshake","version":"1.1","token":"K7M2P9QR"}
+{"type":"handshake_ack","version":"1.1"}
 {"type":"mouse_move","dx":100,"dy":50}
 {"type":"mouse_click","button":"left","action":"click"}
 {"type":"scroll","delta":-3}
