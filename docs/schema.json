@@ -8,10 +8,17 @@
       "$id": "#handshake",
       "title": "Handshake Request",
       "type": "object",
-      "required": ["type", "version"],
+      "required": ["type", "version", "token"],
       "properties": {
         "type": { "const": "handshake" },
-        "version": { "type": "string", "pattern": "^\\d+\\.\\d+$" }
+        "version": { "type": "string", "pattern": "^\\d+\\.\\d+$" },
+        "token": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9]+$",
+          "description": "配对令牌，大小写不敏感；由 Server 生成并显示"
+        }
       },
       "additionalProperties": false
     },

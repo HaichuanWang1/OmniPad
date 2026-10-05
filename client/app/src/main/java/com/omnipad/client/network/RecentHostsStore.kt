@@ -5,7 +5,13 @@ import android.content.SharedPreferences
 import org.json.JSONArray
 import org.json.JSONObject
 
-data class RecentHost(val host: String, val port: Int, val timestamp: Long)
+data class RecentHost(
+    val host: String,
+    val port: Int,
+    /** 配对令牌；服务端首次启动时生成并显示，客户端记住后无需重复输入。 */
+    val token: String,
+    val timestamp: Long,
+)
 
 class RecentHostsStore(context: Context) {
 
@@ -20,6 +26,8 @@ class RecentHostsStore(context: Context) {
             RecentHost(
                 host = obj.getString("host"),
                 port = obj.getInt("port"),
+                // optString 以兼容引入令牌之前存下的记录
+                token = obj.optString("token", ""),
                 timestamp = obj.getLong("ts"),
             )
         }.sortedByDescending { it.timestamp }
@@ -31,6 +39,7 @@ class RecentHostsStore(context: Context) {
             arr.put(JSONObject().apply {
                 put("host", h.host)
                 put("port", h.port)
+                put("token", h.token)
                 put("ts", h.timestamp)
             })
         }
@@ -39,10 +48,10 @@ class RecentHostsStore(context: Context) {
 
     fun get(): List<RecentHost> = loadAll()
 
-    fun add(host: String, port: Int) {
+    fun add(host: String, port: Int, token: String) {
         val list = loadAll().toMutableList()
         list.removeAll { it.host == host && it.port == port }
-        list.add(0, RecentHost(host, port, System.currentTimeMillis()))
+        list.add(0, RecentHost(host, port, token, System.currentTimeMillis()))
         saveAll(list.take(10))
     }
 

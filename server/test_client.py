@@ -3,6 +3,8 @@ import socket
 import sys
 import time
 
+from pairing import load_or_create_token
+
 HOST = "127.0.0.1"
 PORT = 5800
 
@@ -30,7 +32,7 @@ def test():
 
     print("[OK] 已连接到 Server")
 
-    send(conn, {"type": "handshake", "version": "1.0"})
+    send(conn, {"type": "handshake", "version": "1.0", "token": load_or_create_token()})
     resp = recv(conn)
     assert resp["type"] == "handshake_ack", f"握手失败: {resp}"
     print("[OK] 握手成功")

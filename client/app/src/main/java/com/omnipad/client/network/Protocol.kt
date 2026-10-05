@@ -6,8 +6,9 @@ sealed class OmniPadMessage {
     abstract fun toJson(): String
 }
 
-data class Handshake(val version: String = "1.0") : OmniPadMessage() {
-    override fun toJson() = """{"type":"handshake","version":"$version"}"""
+data class Handshake(val version: String = "1.0", val token: String = "") : OmniPadMessage() {
+    override fun toJson() =
+        """{"type":"handshake","version":"$version","token":${JSONObject.quote(token)}}"""
 }
 
 data class HandshakeAck(val version: String) : OmniPadMessage() {

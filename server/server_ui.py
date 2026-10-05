@@ -8,6 +8,7 @@ from tkinter import ttk
 from datetime import datetime
 
 import handlers  # noqa: F401  导入即完成全部消息处理器的注册
+import pairing
 from tcp_server import TcpServer as BaseTcpServer
 
 BG = "#0F1117"
@@ -92,6 +93,10 @@ class ServerUI:
         self.server_thread = None
         self.running = False
 
+        # 令牌在首次启动时生成并落盘，之后复用；GUI 与无头模式共用同一个值
+        self.pairing_token = pairing.load_or_create_token()
+        handlers.set_pairing_token(self.pairing_token)
+
         self._build_ui()
         self._poll_log()
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -122,6 +127,12 @@ class ServerUI:
             title_frame, font=("Consolas", 10, "bold"), fg=PRIMARY, bg=BG, anchor="w",
         )
         self.connect_info.pack(anchor="w", pady=(4, 0))
+
+        self.token_label = tk.Label(
+            title_frame, text=f"配对令牌：{self.pairing_token}",
+            font=("Consolas", 10, "bold"), fg=YELLOW, bg=BG, anchor="w",
+        )
+        self.token_label.pack(anchor="w", pady=(2, 0))
 
         control_frame = tk.Frame(header, bg=BG)
         control_frame.pack(side=tk.RIGHT)

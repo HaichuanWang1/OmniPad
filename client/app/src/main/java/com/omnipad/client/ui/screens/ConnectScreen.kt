@@ -55,20 +55,22 @@ import com.omnipad.client.network.RecentHost
 fun ConnectScreen(
     connectionState: ConnectionState,
     recentHosts: List<RecentHost>,
-    onConnect: (host: String, port: Int) -> Unit,
+    onConnect: (host: String, port: Int, token: String) -> Unit,
     onDeleteHost: (host: String, port: Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var host by remember { mutableStateOf("") }
     var port by remember { mutableStateOf("") }
+    var token by remember { mutableStateOf("") }
     val focusManager = LocalFocusManager.current
     var deleteTarget by remember { mutableStateOf<RecentHost?>(null) }
 
-    fun connectOrFill(h: String, p: Int) {
+    fun connectOrFill(h: String, p: Int, t: String) {
         focusManager.clearFocus()
         host = h
         port = p.toString()
-        onConnect(h, p)
+        token = t
+        onConnect(h, p, t)
     }
 
     val fieldColors = OutlinedTextFieldDefaults.colors(
@@ -144,12 +146,29 @@ fun ConnectScreen(
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Number,
+                        imeAction = ImeAction.Next,
+                    ),
+                    colors = fieldColors,
+                    shape = MaterialTheme.shapes.medium,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                Spacer(Modifier.height(12.dp))
+
+                OutlinedTextField(
+                    value = token,
+                    onValueChange = { token = it },
+                    label = { Text("配对令牌") },
+                    placeholder = { Text("服务端窗口顶部显示") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Ascii,
                         imeAction = ImeAction.Done,
                     ),
                     keyboardActions = KeyboardActions(
                         onDone = {
                             focusManager.clearFocus()
-                            onConnect(host, port.toIntOrNull() ?: 5800)
+                            onConnect(host, port.toIntOrNull() ?: 5800, token)
                         },
                     ),
                     colors = fieldColors,
@@ -176,7 +195,7 @@ fun ConnectScreen(
                                 shape = RoundedCornerShape(8.dp),
                                 color = MaterialTheme.colorScheme.surface,
                                 modifier = Modifier.combinedClickable(
-                                    onClick = { connectOrFill(recent.host, recent.port) },
+                                    onClick = { connectOrFill(recent.host, recent.port, recent.token) },
                                     onLongClick = { deleteTarget = recent },
                                 ),
                             ) {
@@ -196,7 +215,7 @@ fun ConnectScreen(
                 Button(
                     onClick = {
                         focusManager.clearFocus()
-                        onConnect(host, port.toIntOrNull() ?: 5800)
+                        onConnect(host, port.toIntOrNull() ?: 5800, token)
                     },
                     enabled = connectionState != ConnectionState.CONNECTING,
                     modifier = Modifier.fillMaxWidth().height(52.dp),
@@ -222,7 +241,7 @@ fun ConnectScreen(
                 if (connectionState == ConnectionState.FAILED) {
                     Spacer(Modifier.height(16.dp))
                     Text(
-                        text = "连接失败，请检查地址和端口",
+                        text = "连接失败，请检查地址、端口和配对令牌",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.error,
                         textAlign = TextAlign.Center,

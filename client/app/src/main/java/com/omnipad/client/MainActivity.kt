@@ -76,10 +76,10 @@ class MainActivity : ComponentActivity() {
                     ConnectScreen(
                         connectionState = state,
                         recentHosts = recentHosts,
-                        onConnect = { host, port ->
-                            hostsStore.add(host, port)
+                        onConnect = { host, port, token ->
+                            hostsStore.add(host, port, token)
                             recentHosts = hostsStore.get()
-                            connection.connect(host, port)
+                            connection.connect(host, port, token)
                         },
                         onDeleteHost = { host, port ->
                             hostsStore.remove(host, port)

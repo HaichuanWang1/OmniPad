@@ -9,6 +9,7 @@
 """
 import logging
 
+import pairing
 from input_controller import move_mouse, click_mouse, scroll, send_text, press_key
 from protocol import handler, send_json, send_error
 
@@ -19,6 +20,19 @@ PROTOCOL_VERSION = "1.0"
 MOUSE_BUTTONS = ("left", "right", "middle")
 MOUSE_ACTIONS = ("down", "up", "click")
 KEY_ACTIONS = ("down", "up", "press")
+
+# 期望的配对令牌。None 表示不校验（仅供测试）；正常启动时一定会被设置。
+_expected_token: str | None = None
+
+
+def set_pairing_token(token) -> None:
+    """设置期望的配对令牌。传入 None 或空串表示关闭校验。"""
+    global _expected_token
+    _expected_token = pairing.normalize(token) or None
+
+
+def get_pairing_token() -> str | None:
+    return _expected_token
 
 
 def _fail(conn, code, message):
@@ -36,6 +50,14 @@ def on_handshake(conn, msg):
             f"expected {PROTOCOL_VERSION} got {version}",
         )
         return False  # 请求断开，由 tcp_server 关闭连接
+
+    if _expected_token is not None:
+        provided = pairing.normalize(msg.get("token", ""))
+        if provided != _expected_token:
+            logger.warning("handshake rejected: invalid pairing token")
+            send_error(conn, "AUTH_FAILED", "invalid pairing token")
+            return False
+
     send_json(conn, {"type": "handshake_ack", "version": PROTOCOL_VERSION})
     logger.info(f"handshake OK, version={version}")
     return True

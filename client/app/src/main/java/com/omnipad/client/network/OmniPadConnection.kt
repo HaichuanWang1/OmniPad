@@ -64,7 +64,13 @@ class OmniPadConnection(private val scope: CoroutineScope) {
         _lastError.value = null
     }
 
-    fun connect(host: String, port: Int, onConnected: () -> Unit = {}, onFailed: (String) -> Unit = {}) {
+    fun connect(
+        host: String,
+        port: Int,
+        token: String,
+        onConnected: () -> Unit = {},
+        onFailed: (String) -> Unit = {},
+    ) {
         if (_connectionState.value != ConnectionState.DISCONNECTED && _connectionState.value != ConnectionState.FAILED) return
 
         _connectionState.value = ConnectionState.CONNECTING
@@ -81,7 +87,7 @@ class OmniPadConnection(private val scope: CoroutineScope) {
                 reader = BufferedReader(InputStreamReader(sock.getInputStream(), Charsets.UTF_8))
 
                 // 握手必须在写协程启动前同步发出，保证它是这条连接上的第一条消息。
-                out.write(Handshake().toJson() + "\n")
+                out.write(Handshake(token = token).toJson() + "\n")
                 out.flush()
 
                 val response = reader?.readLine()
@@ -94,9 +100,19 @@ class OmniPadConnection(private val scope: CoroutineScope) {
                         startHeartbeat()
                         startReader()
                     } else {
+                        // 服务端拒绝时会先回一条 error 再断开，把原因透出给用户
+                        val err = msg as? Error
+                        val reason = if (err == null) {
+                            "握手失败"
+                        } else when (err.code) {
+                            "AUTH_FAILED" -> "配对失败：令牌不正确"
+                            "VERSION_MISMATCH" -> "协议版本不匹配"
+                            else -> "握手失败：${err.message}"
+                        }
                         disconnect()
                         _connectionState.value = ConnectionState.FAILED
-                        withContext(Dispatchers.Main) { onFailed("握手失败") }
+                        _lastError.value = reason
+                        withContext(Dispatchers.Main) { onFailed(reason) }
                     }
                 } else {
                     disconnect()

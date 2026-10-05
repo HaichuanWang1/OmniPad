@@ -12,23 +12,39 @@ OmniPad 使用 **TCP + JSON Lines** 协议进行通信。每条消息为单行 U
 
 ## 握手流程
 
-1. Client 连接 Server 后，立即发送握手请求。
-2. Server 校验版本号，回复握手确认或错误。
+1. Client 连接 Server 后，立即发送握手请求，携带配对令牌。
+2. Server 先校验版本号，再校验令牌；全部通过才回复握手确认。
 3. 握手成功后，双方进入命令/响应循环。
 
 ```
 Client → Server:
-{"type":"handshake","version":"1.0"}
+{"type":"handshake","version":"1.0","token":"K7M2P9QR"}
 
 Server → Client:
 {"type":"handshake_ack","version":"1.0"}
 ```
+
+### 配对令牌
+
+Server 首次启动时随机生成一个 **8 位令牌**，持久化到 `server/pairing_token.txt`
+（不入库），并在 GUI 顶部与无头模式日志中显示。Client 必须提交相同令牌。
+
+- 令牌字母表为 `A-Z` 与 `2-9`，已剔除易混淆的 `I` `O` `0` `1`
+- 比较时大小写不敏感，两侧都会 trim 后转大写
+- 无头模式可用 `--token` 覆盖，便于脚本化联调
 
 若版本不匹配，Server 回复错误并关闭连接：
 
 ```
 Server → Client:
 {"type":"error","code":"VERSION_MISMATCH","message":"expected 1.0 got x.y"}
+```
+
+若令牌不正确，Server 同样回复错误并关闭连接：
+
+```
+Server → Client:
+{"type":"error","code":"AUTH_FAILED","message":"invalid pairing token"}
 ```
 
 ---
@@ -119,6 +135,7 @@ Server → Client:
 | code | 说明 |
 |------|------|
 | `VERSION_MISMATCH` | 协议版本不匹配 |
+| `AUTH_FAILED` | 配对令牌不正确 |
 | `UNKNOWN_TYPE` | 未知消息类型 |
 | `INVALID_PARAMS` | 参数无效 |
 | `ACTION_FAILED` | 执行操作失败 |
@@ -128,7 +145,7 @@ Server → Client:
 ## 完整消息示例
 
 ```
-{"type":"handshake","version":"1.0"}
+{"type":"handshake","version":"1.0","token":"K7M2P9QR"}
 {"type":"handshake_ack","version":"1.0"}
 {"type":"mouse_move","dx":100,"dy":50}
 {"type":"mouse_click","button":"left","action":"click"}
