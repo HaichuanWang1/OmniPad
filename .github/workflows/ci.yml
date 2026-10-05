@@ -67,14 +67,17 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      # 只编译，不签名也不打包：CI 里没有 keystore.properties
+      # 只编译，不签名：CI 里没有 keystore.properties
       - name: 编译 debug
         working-directory: client
         run: ./gradlew :app:compileDebugKotlin --console=plain --stacktrace
 
-      - name: 编译 release（不签名）
+      # 用 assembleRelease 而不是 compileReleaseKotlin：前者会真正跑 R8 压缩
+      # 与 lintVital，这两件事只在打包时发生，光编译是验不到的。
+      # 没有 keystore.properties 时产出的是未签名包，CI 不需要签名。
+      - name: 打包 release（未签名，含 R8 与 lint）
         working-directory: client
-        run: ./gradlew :app:compileReleaseKotlin --console=plain --stacktrace
+        run: ./gradlew :app:assembleRelease --console=plain --stacktrace
 
       # 协议编解码与连接层的单元测试，跑在普通 JVM 上
       - name: 单元测试
