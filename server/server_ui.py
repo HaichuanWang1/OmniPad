@@ -303,7 +303,10 @@ class ServerApp:
                   activeforeground=TEXT, command=self._clear_clients).pack(side=tk.RIGHT)
 
         columns = ("addr", "status", "connected", "last", "messages")
-        self.client_tree = ttk.Treeview(container, columns=columns, show="headings",
+        tree_body = tk.Frame(container, bg=BG)
+        tree_body.pack(fill=tk.X, pady=(4, 0))
+
+        self.client_tree = ttk.Treeview(tree_body, columns=columns, show="headings",
                                         height=5, style="Client.Treeview")
         for key, text, width, anchor in (
             ("addr", "地址", 180, "w"),
@@ -314,7 +317,15 @@ class ServerApp:
         ):
             self.client_tree.heading(key, text=text)
             self.client_tree.column(key, width=width, anchor=anchor)
-        self.client_tree.pack(fill=tk.X, pady=(4, 0))
+        self.client_tree.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+        # 记录上限是 200 条，表格只显示 5 行 —— 没有滚动条的话用户根本不知道
+        # 下面还有东西（鼠标滚轮能滚，但没有任何提示）。
+        tree_scroll = ttk.Scrollbar(tree_body, orient=tk.VERTICAL,
+                                    command=self.client_tree.yview,
+                                    style="Dark.Vertical.TScrollbar")
+        tree_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        self.client_tree.config(yscrollcommand=tree_scroll.set)
 
         for tag, color in STATE_COLORS.items():
             self.client_tree.tag_configure(tag, foreground=color)
@@ -345,10 +356,13 @@ class ServerApp:
                                 insertbackground=TEXT, height=8)
         self.log_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        scrollbar = tk.Scrollbar(body, bg=SURFACE_VARIANT, troughcolor=BG)
+        # 经典 tk.Scrollbar 在 Windows 上会无视配色，深色界面里是一条刺眼的浅灰。
+        # ttk + clam 主题才认这些设置。
+        scrollbar = ttk.Scrollbar(body, orient=tk.VERTICAL,
+                                  command=self.log_text.yview,
+                                  style="Dark.Vertical.TScrollbar")
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.log_text.config(yscrollcommand=scrollbar.set)
-        scrollbar.config(command=self.log_text.yview)
 
         for level, color in LOG_COLORS.items():
             self.log_text.tag_config(level.lower(), foreground=color)
@@ -392,6 +406,13 @@ class ServerApp:
                   foreground=[("selected", TEXT)])
         style.map("Client.Treeview.Heading",
                   background=[("active", SURFACE_VARIANT)])
+
+        style.configure("Dark.Vertical.TScrollbar", background=SURFACE_VARIANT,
+                        troughcolor=BG, bordercolor=BG, arrowcolor=TEXT_DIM,
+                        darkcolor=SURFACE_VARIANT, lightcolor=SURFACE_VARIANT,
+                        relief=tk.FLAT)
+        style.map("Dark.Vertical.TScrollbar",
+                  background=[("active", PRIMARY), ("pressed", PRIMARY)])
 
     # ---- 生命周期 ----
 
