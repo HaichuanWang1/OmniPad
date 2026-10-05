@@ -1,135 +1,76 @@
 package com.omnipad.client
 
-import android.content.Context
+import android.os.Build
 import android.os.Bundle
-import android.widget.Toast
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
-import androidx.lifecycle.lifecycleScope
-import com.omnipad.client.network.ConnectionNotice
-import com.omnipad.client.network.ConnectionState
-import com.omnipad.client.network.Error
-import com.omnipad.client.network.OmniPadConnection
-import com.omnipad.client.network.RecentHostsStore
-import com.omnipad.client.ui.screens.ConnectScreen
-import com.omnipad.client.ui.screens.TouchpadScreen
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.omnipad.client.ui.OmniPadApp
 import com.omnipad.client.ui.theme.OmniPadTheme
+import com.omnipad.client.ui.theme.isDarkTheme
 
-/** 把连接层的事件映射成用户可读的文案。 */
-private fun noticeToText(context: Context, notice: ConnectionNotice): String = when (notice) {
-    is ConnectionNotice.ServerError ->
-        context.getString(R.string.error_server, notice.message)
-
-    ConnectionNotice.AuthFailed ->
-        context.getString(R.string.error_auth_failed)
-
-    ConnectionNotice.VersionMismatch ->
-        context.getString(R.string.error_version_mismatch)
-
-    ConnectionNotice.HandshakeFailed ->
-        context.getString(R.string.error_handshake_failed)
-
-    ConnectionNotice.ServerNoResponse ->
-        context.getString(R.string.error_server_no_response)
-
-    is ConnectionNotice.ConnectFailed -> notice.detail?.let {
-        context.getString(R.string.error_connect_failed_detail, it)
-    } ?: context.getString(R.string.error_connect_failed)
-
-    ConnectionNotice.HeartbeatTimeout ->
-        context.getString(R.string.error_heartbeat_timeout)
-}
-
+/**
+ * 唯一的 Activity。
+ *
+ * 只负责主题、系统栏与内容装配。所有业务状态都在 [MainViewModel] 里，
+ * 因此转屏不再重建连接（上一版把连接对象作为 Activity 字段持有，
+ * `onDestroy` 里断开，转一下手机就掉线）。
+ */
 class MainActivity : ComponentActivity() {
-
-    private val connection = OmniPadConnection(lifecycleScope)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-
-        val hostsStore = RecentHostsStore(this)
+        applyDisplayCutoutMode()
 
         setContent {
-            OmniPadTheme {
-                val state by connection.connectionState.collectAsState()
-                val reconnectAttempt by connection.reconnectAttempt.collectAsState()
-                val lastError by connection.lastError.collectAsState()
-                var recentHosts by remember { mutableStateOf(hostsStore.get()) }
-                var autoDisconnect by remember { mutableStateOf(true) }
+            val viewModel: MainViewModel = viewModel()
+            val settings by viewModel.settings.collectAsState()
+            val dark = isDarkTheme(settings.themeMode)
 
-                // 监听器只在进入组合时设置一次。原先直接写在组合体内，
-                // 每次重组都会重新赋值，是典型的副作用误用。
-                LaunchedEffect(Unit) {
-                    connection.setOnMessageListener { msg ->
-                        if (msg is Error) {
-                            Toast.makeText(
-                                this@MainActivity,
-                                this@MainActivity.getString(
-                                    R.string.error_server, msg.message,
-                                ),
-                                Toast.LENGTH_SHORT,
-                            ).show()
-                        }
-                    }
+            // 系统栏图标的明暗必须跟着**实际生效**的主题走：用户手动选了浅色
+            // 但状态栏还是白色图标的话，状态栏会直接看不见。
+            val view = LocalView.current
+            SideEffect {
+                WindowCompat.getInsetsController(window, view).apply {
+                    isAppearanceLightStatusBars = !dark
+                    isAppearanceLightNavigationBars = !dark
                 }
+            }
 
-                // 心跳与超时判定都在连接层，这里只把用户开关同步过去
-                LaunchedEffect(autoDisconnect) {
-                    connection.autoDisconnect = autoDisconnect
-                }
-
-                // 文案在组合里解析好再交给 effect，effect 内部不能调用 @Composable
-                val errorText = lastError?.let { noticeToText(this@MainActivity, it) }
-                LaunchedEffect(errorText) {
-                    if (errorText != null) {
-                        Toast.makeText(
-                            this@MainActivity, errorText, Toast.LENGTH_LONG,
-                        ).show()
-                        connection.clearLastError()
-                    }
-                }
-
-                if (state == ConnectionState.CONNECTED) {
-                    TouchpadScreen(
-                        onDisconnect = { connection.disconnect() },
-                        onSendMessage = { connection.sendMessage(it) },
-                        autoDisconnect = autoDisconnect,
-                        onToggleAutoDisconnect = { autoDisconnect = !autoDisconnect },
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                } else {
-                    ConnectScreen(
-                        connectionState = state,
-                        recentHosts = recentHosts,
-                        reconnectAttempt = reconnectAttempt,
-                        onConnect = { host, port, token ->
-                            hostsStore.add(host, port, token)
-                            recentHosts = hostsStore.get()
-                            connection.connect(host, port, token)
-                        },
-                        onDeleteHost = { host, port ->
-                            hostsStore.remove(host, port)
-                            recentHosts = hostsStore.get()
-                        },
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                }
+            OmniPadTheme(
+                themeMode = settings.themeMode,
+                dynamicColor = settings.dynamicColor,
+            ) {
+                OmniPadApp(viewModel)
             }
         }
     }
 
-    override fun onDestroy() {
-        connection.disconnect()
-        super.onDestroy()
+    /**
+     * 允许内容延伸到刘海区域。
+     *
+     * `enableEdgeToEdge()` 内部也会设这个值，但它是**就地修改** `window.attributes`
+     * 返回的对象、不经过 `setAttributes`。在部分 OEM 系统（实测 OPPO ColorOS，
+     * Android 11）上这个改动不会生效：横屏时窗口被刘海裁掉 56px，
+     * `dumpsys window` 里 `mFrame=[56,0][1600,720]`，那条区域由系统填成黑色。
+     *
+     * 这里用 `window.attributes = ...` 显式走一遍 setter，触发一次真正的
+     * `setAttributes`。内容本身仍然靠 `WindowInsets.safeDrawing` 避开刘海，
+     * 这样刘海区域会被页面背景填满，而不是留一条黑边。
+     */
+    private fun applyDisplayCutoutMode() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return
+        window.attributes = window.attributes.apply {
+            layoutInDisplayCutoutMode =
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
     }
 }

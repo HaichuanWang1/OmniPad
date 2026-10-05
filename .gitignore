@@ -32,3 +32,6 @@ pairing_token.txt
 
 # 发布产物（由 GitHub Release 分发，不入库）
 dist/
+
+# 联调用的模拟器截图（本地验收用，不入库）
+shots/

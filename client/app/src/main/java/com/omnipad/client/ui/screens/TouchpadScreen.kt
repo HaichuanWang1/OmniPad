@@ -1,526 +1,415 @@
 package com.omnipad.client.ui.screens
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
-import kotlinx.coroutines.withTimeoutOrNull
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Send
-
+import androidx.compose.material.icons.filled.PowerSettingsNew
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.omnipad.client.R
+import com.omnipad.client.data.Settings
+import com.omnipad.client.network.ConnectionState
 import com.omnipad.client.network.Keyboard
 import com.omnipad.client.network.MouseClick
 import com.omnipad.client.network.MouseMove
 import com.omnipad.client.network.OmniPadMessage
 import com.omnipad.client.network.Scroll
-import com.omnipad.client.network.TextInput
-import java.util.concurrent.atomic.AtomicInteger
-import kotlin.math.sqrt
+import com.omnipad.client.ui.components.ConnectionStatusPill
+import com.omnipad.client.ui.components.KeyCapGridRow
+import com.omnipad.client.ui.components.KeyCapSpec
+import com.omnipad.client.ui.input.TextInputTracker
+import com.omnipad.client.ui.util.Haptics
+import com.omnipad.client.ui.util.rememberHaptics
 
-/** 双指纵向位移换算成滚轮格数的除数。 */
-private const val SCROLL_DIVISOR = 3f
+/** 横屏时控制面板占的宽度。 */
+private val LANDSCAPE_PANEL_WIDTH = 300.dp
+
+private val ModifierSetSaver = listSaver<Set<String>, String>(
+    save = { it.toList() },
+    restore = { it.toSet() },
+)
 
 /**
- * 触摸板的手势阶段。
+ * 触控板页。
  *
- * 全部由同一个 `pointerInput` 状态机驱动：判定阶段先决定这次触摸属于哪一类，
- * 执行阶段只做对应的事。这样各手势之间不会互相抢事件。
+ * ## 布局原则：触控板优先
+ *
+ * 上一版把触控板放在一个可滚动 `Column` 的最底部、固定 320dp 高，上面压着 5 排按钮。
+ * 在 411×823dp 的屏幕上刚好卡在最底边，横屏时干脆整块在屏幕外 —— 主角被挤没了。
+ *
+ * 现在触控板拿 `weight(1f)` 抢剩余空间，控制面板是固定高度的标签页，两者不再互相
+ * 争地；横屏时改成左右分栏，把纵向空间全留给触控板。
  */
-private enum class TouchMode { TAP, LONG_PRESS, DRAG, SCROLL }
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TouchpadScreen(
-    onDisconnect: () -> Unit,
+    connectionState: ConnectionState,
+    reconnectAttempt: Int,
+    latencyMs: Int?,
+    settings: Settings,
     onSendMessage: (OmniPadMessage) -> Unit,
-    autoDisconnect: Boolean,
-    onToggleAutoDisconnect: () -> Unit,
+    onDisconnect: () -> Unit,
+    onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var isPressed by remember { mutableStateOf(false) }
-    var textInput by remember { mutableStateOf("") }
-    val focusManager = LocalFocusManager.current
-    val scrollState = rememberScrollState()
-    val dragAccumX = remember { AtomicInteger(0) }
-    val dragAccumY = remember { AtomicInteger(0) }
-    val scrollAccum = remember { AtomicInteger(0) }
-    var activeModifiers by remember { mutableStateOf(setOf<String>()) }
-    var heldMouseButton by remember { mutableStateOf<String?>(null) }
-    val modifierOrder = listOf("ctrl", "shift", "alt", "win")
+    val haptics = rememberHaptics(settings.hapticsEnabled)
+    val tracker = remember { TextInputTracker() }
+    val view = LocalView.current
 
-    fun sendKeyWithModifiers(key: String, action: String) {
-        val sorted = modifierOrder.filter { it in activeModifiers }
-        sorted.forEach { onSendMessage(Keyboard(it, "down")) }
-        onSendMessage(Keyboard(key, action))
-        sorted.reversed().forEach { onSendMessage(Keyboard(it, "up")) }
+    // 修饰键的锁定状态要跨旋转保留：否则转屏时电脑上会留下一个按住的 Ctrl
+    var activeModifiers by rememberSaveable(stateSaver = ModifierSetSaver) {
+        mutableStateOf(emptySet())
+    }
+    var heldMouseButton by rememberSaveable { mutableStateOf<String?>(null) }
+    var confirmDisconnect by remember { mutableStateOf(false) }
+
+    /** 把在电脑上按住的键全部松开。断开、返回、旋转销毁时都要做。 */
+    fun releaseHeldKeys() {
+        releaseModifiers(activeModifiers).forEach(onSendMessage)
+        heldMouseButton?.let { onSendMessage(MouseClick(it, "up")) }
+        activeModifiers = emptySet()
+        heldMouseButton = null
     }
 
-    LaunchedEffect(Unit) {
-        while (true) {
-            kotlinx.coroutines.delay(16)
-            val ax = dragAccumX.getAndSet(0)
-            val ay = dragAccumY.getAndSet(0)
-            if (ax != 0 || ay != 0) {
-                onSendMessage(MouseMove(ax, ay))
-            }
-            val sc = scrollAccum.getAndSet(0)
-            if (sc != 0) {
-                onSendMessage(Scroll(sc))
-            }
+    DisposableEffect(Unit) {
+        onDispose { releaseHeldKeys() }
+    }
+
+    // 保持屏幕常亮：用手机当键盘打字时，屏幕不该因为没碰手机而熄灭
+    DisposableEffect(settings.keepScreenOn) {
+        view.keepScreenOn = settings.keepScreenOn
+        onDispose { view.keepScreenOn = false }
+    }
+
+    fun pressKey(key: String) {
+        haptics.tick()
+        keyPress(key).forEach(onSendMessage)
+    }
+
+    fun toggleModifier(key: String) {
+        haptics.tick()
+        if (key in activeModifiers) {
+            activeModifiers = activeModifiers - key
+            onSendMessage(Keyboard(key, "up"))
+        } else {
+            activeModifiers = activeModifiers + key
+            onSendMessage(Keyboard(key, "down"))
         }
     }
 
+    /**
+     * 鼠标键是「按下并保持」的开关，用于拖拽选中、拖动窗口这类操作。
+     *
+     * 切到另一个键时**必须先松开上一个**：上一版直接覆盖状态，导致先按下的那个键
+     * 在 Windows 侧永远处于按下状态，直到用户手动再点一次。
+     */
+    fun toggleMouseButton(button: String) {
+        haptics.click()
+        val held = heldMouseButton
+        if (held == button) {
+            heldMouseButton = null
+            onSendMessage(MouseClick(button, "up"))
+        } else {
+            held?.let { onSendMessage(MouseClick(it, "up")) }
+            heldMouseButton = button
+            onSendMessage(MouseClick(button, "down"))
+        }
+    }
+
+    // 每次重组都重新构造：闭包要读到最新的 activeModifiers，remember 会捕获旧值
+    val actions = PanelActions(
+        pressKey = { pressKey(it) },
+        toggleModifier = { toggleModifier(it) },
+        sendCombo = { keys ->
+            haptics.tick()
+            comboSequence(keys).forEach(onSendMessage)
+        },
+        send = onSendMessage,
+        haptics = haptics,
+    )
+
     Scaffold(
+        modifier = modifier.fillMaxSize(),
+        containerColor = MaterialTheme.colorScheme.background,
+        // 自己管内边距：TopAppBar 负责顶部，下面只补横向和底部
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
-                title = { Text("OmniPad") },
-                navigationIcon = {
-                    IconButton(onClick = onDisconnect) {
+                title = {
+                    ConnectionStatusPill(
+                        state = connectionState,
+                        reconnectAttempt = reconnectAttempt,
+                        latencyMs = latencyMs,
+                    )
+                },
+                actions = {
+                    IconButton(onClick = onOpenSettings) {
                         Icon(
-                            imageVector = Icons.Default.ArrowBack,
-                            contentDescription = "Disconnect",
+                            imageVector = Icons.Default.Settings,
+                            contentDescription = stringResource(R.string.session_settings),
+                        )
+                    }
+                    IconButton(onClick = { confirmDisconnect = true }) {
+                        Icon(
+                            imageVector = Icons.Default.PowerSettingsNew,
+                            contentDescription = stringResource(R.string.session_disconnect),
                         )
                     }
                 },
-                actions = {
-                    Switch(
-                        checked = autoDisconnect,
-                        onCheckedChange = { onToggleAutoDisconnect() },
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = MaterialTheme.colorScheme.primary,
-                            checkedTrackColor = MaterialTheme.colorScheme.primaryContainer,
-                        ),
-                    )
-                },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
+                    containerColor = MaterialTheme.colorScheme.background,
                 ),
             )
         },
     ) { padding ->
         Column(
-            modifier = modifier
+            modifier = Modifier
                 .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background)
                 .padding(padding)
-                .padding(horizontal = 16.dp)
-                .verticalScroll(scrollState),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+                // safeDrawing 的底部已经取过「导航栏 / 输入法」的较大者，
+                // 不需要再叠一次 imePadding
+                .windowInsetsPadding(
+                    WindowInsets.safeDrawing.only(
+                        WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom
+                    )
+                ),
         ) {
-            Spacer(Modifier.height(4.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                ButtonGroup(
-                    items = listOf(
-                        ButtonSpec(stringResource(R.string.mouse_left), "left") {
-                            val held = heldMouseButton
-                            if (held == "left") {
-                                heldMouseButton = null
-                                onSendMessage(MouseClick("left", "up"))
-                            } else {
-                                heldMouseButton = "left"
-                                onSendMessage(MouseClick("left", "down"))
-                            }
-                        },
-                        ButtonSpec(stringResource(R.string.mouse_right), "right") {
-                            val held = heldMouseButton
-                            if (held == "right") {
-                                heldMouseButton = null
-                                onSendMessage(MouseClick("right", "up"))
-                            } else {
-                                heldMouseButton = "right"
-                                onSendMessage(MouseClick("right", "down"))
-                            }
-                        },
-                        ButtonSpec(stringResource(R.string.mouse_middle), "middle") {
-                            val held = heldMouseButton
-                            if (held == "middle") {
-                                heldMouseButton = null
-                                onSendMessage(MouseClick("middle", "up"))
-                            } else {
-                                heldMouseButton = "middle"
-                                onSendMessage(MouseClick("middle", "down"))
-                            }
-                        },
-                    ),
-                    heldKey = heldMouseButton,
-                    modifier = Modifier.weight(1f),
-                )
-
-                Spacer(Modifier.width(8.dp))
-
-                ButtonGroup(
-                    items = listOf(
-                        ButtonSpec("△") { onSendMessage(Scroll(1)) },
-                        ButtonSpec("▽") { onSendMessage(Scroll(-1)) },
-                    ),
-                    modifier = Modifier.width(120.dp),
+            if (connectionState != ConnectionState.CONNECTED) {
+                SessionBanner(
+                    state = connectionState,
+                    reconnectAttempt = reconnectAttempt,
+                    onBack = onDisconnect,
                 )
             }
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                OutlinedTextField(
-                    value = textInput,
-                    onValueChange = { textInput = it },
-                    placeholder = { Text(stringResource(R.string.touchpad_text_placeholder)) },
-                    singleLine = true,
-                    modifier = Modifier.weight(1f),
-                    shape = MaterialTheme.shapes.medium,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = MaterialTheme.colorScheme.primary,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
-                    ),
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                    keyboardActions = KeyboardActions(
-                        onSend = {
-                            if (textInput.isNotBlank()) {
-                                onSendMessage(TextInput(textInput))
-                                textInput = ""
-                                focusManager.clearFocus()
-                            }
-                        },
-                    ),
-                )
-                FilledIconButton(
-                    onClick = {
-                        if (textInput.isNotBlank()) {
-                            onSendMessage(TextInput(textInput))
-                            textInput = ""
-                            focusManager.clearFocus()
-                        }
-                    },
-                    modifier = Modifier.size(56.dp),
-                    shape = MaterialTheme.shapes.medium,
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Send,
-                        contentDescription = "Send",
-                    )
-                }
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                val backspaceLabel = stringResource(R.string.touchpad_backspace)
-                listOf("Enter", "Tab", "Esc", backspaceLabel).forEach { label ->
-                    val key = when (label) {
-                        backspaceLabel -> "backspace"
-                        "Esc" -> "escape"
-                        else -> label.lowercase()
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth().weight(1f)) {
+                // 按实际可用空间判断横竖，而不是读 Configuration ——
+                // 折叠屏、分屏、平板上的窗口比例都能正确响应
+                if (maxWidth > maxHeight) {
+                    Row(modifier = Modifier.fillMaxSize()) {
+                        PadArea(
+                            settings = settings,
+                            haptics = haptics,
+                            heldMouseButton = heldMouseButton,
+                            onSendMessage = onSendMessage,
+                            onToggleMouseButton = { toggleMouseButton(it) },
+                            modifier = Modifier.weight(1f).fillMaxHeight(),
+                        )
+                        ControlPanel(
+                            activeModifiers = activeModifiers,
+                            actions = actions,
+                            tracker = tracker,
+                            contentHeight = null,
+                            modifier = Modifier.width(LANDSCAPE_PANEL_WIDTH).fillMaxHeight(),
+                        )
                     }
-                    FilledIconButton(
-                        onClick = { sendKeyWithModifiers(key, "press") },
-                        modifier = Modifier.weight(1f).height(48.dp),
-                        shape = MaterialTheme.shapes.small,
-                        colors = IconButtonDefaults.filledIconButtonColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        ),
-                    ) {
-                        Text(label, style = MaterialTheme.typography.labelLarge)
+                } else {
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        PadArea(
+                            settings = settings,
+                            haptics = haptics,
+                            heldMouseButton = heldMouseButton,
+                            onSendMessage = onSendMessage,
+                            onToggleMouseButton = { toggleMouseButton(it) },
+                            modifier = Modifier.weight(1f),
+                        )
+                        ControlPanel(
+                            activeModifiers = activeModifiers,
+                            actions = actions,
+                            tracker = tracker,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
                     }
                 }
             }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                listOf("Ctrl", "Shift", "Alt", "Win").forEach { label ->
-                    val key = label.lowercase()
-                    val isActive = key in activeModifiers
-                    FilledIconButton(
-                        onClick = {
-                            if (isActive) {
-                                activeModifiers = activeModifiers - key
-                                onSendMessage(Keyboard(key, "up"))
-                            } else {
-                                activeModifiers = activeModifiers + key
-                                onSendMessage(Keyboard(key, "down"))
-                            }
-                        },
-                        modifier = Modifier.weight(1f).height(48.dp),
-                        shape = MaterialTheme.shapes.small,
-                        colors = if (isActive) {
-                            IconButtonDefaults.filledIconButtonColors(
-                                containerColor = MaterialTheme.colorScheme.primary,
-                                contentColor = MaterialTheme.colorScheme.onPrimary,
-                            )
-                        } else {
-                            IconButtonDefaults.filledIconButtonColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        },
-                    ) {
-                        Text(label, style = MaterialTheme.typography.labelLarge)
-                    }
-                }
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                listOf("↑", "↓", "←", "→").forEach { label ->
-                    val key = when (label) {
-                        "↑" -> "up"; "↓" -> "down"; "←" -> "left"; "→" -> "right"
-                        else -> label.lowercase()
-                    }
-                    FilledIconButton(
-                        onClick = { sendKeyWithModifiers(key, "press") },
-                        modifier = Modifier.weight(1f).height(48.dp),
-                        shape = MaterialTheme.shapes.small,
-                        colors = IconButtonDefaults.filledIconButtonColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        ),
-                    ) {
-                        Text(label, style = MaterialTheme.typography.titleMedium)
-                    }
-                }
-            }
-
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(320.dp)
-                    .clip(MaterialTheme.shapes.large)
-                    .background(
-                        if (isPressed) {
-                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
-                        } else {
-                            MaterialTheme.colorScheme.surfaceVariant
-                        },
-                    )
-                    .border(
-                        width = 1.dp,
-                        color = if (isPressed) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.outlineVariant
-                        },
-                        shape = MaterialTheme.shapes.large,
-                    )
-                    // 单一手势状态机：点击 / 长按 / 拖动 / 双指滚动都在这里判定。
-                    // 原先三个独立的 pointerInput 会互相抢事件，「拖动被点击吃掉」
-                    // 「双指滚动误触发」都是这么来的。
-                    .pointerInput(Unit) {
-                        awaitEachGesture {
-                            val down = awaitFirstDown(requireUnconsumed = false)
-                            // 用平台阈值，尊重系统的无障碍与手感设置
-                            val longPressTimeout = viewConfiguration.longPressTimeoutMillis
-                            val touchSlop = viewConfiguration.touchSlop
-
-                            // null 表示还没判定出来
-                            var decided: TouchMode? = null
-                            var lastPos = down.position
-                            var accumulated = Offset.Zero
-                            var scrollLastY = 0f
-
-                            // 判定阶段：静置超时即长按；否则等移动超阈值或第二根手指。
-                            withTimeoutOrNull(longPressTimeout) {
-                                while (decided == null) {
-                                    val event = awaitPointerEvent()
-                                    val pressed = event.changes.filter { it.pressed }
-                                    when {
-                                        pressed.isEmpty() -> decided = TouchMode.TAP
-
-                                        pressed.size >= 2 -> {
-                                            decided = TouchMode.SCROLL
-                                            scrollLastY = pressed
-                                                .map { it.position.y }.average().toFloat()
-                                        }
-
-                                        else -> {
-                                            val change = event.changes
-                                                .firstOrNull { it.id == down.id }
-                                                ?: pressed.first()
-                                            accumulated += change.position - lastPos
-                                            lastPos = change.position
-                                            if (accumulated.getDistance() > touchSlop) {
-                                                decided = TouchMode.DRAG
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            // 静置超过长按阈值，判定为长按
-                            val mode = decided ?: TouchMode.LONG_PRESS
-
-                            // 执行阶段：只做判定结果对应的那一件事。
-                            when (mode) {
-                                TouchMode.TAP ->
-                                    onSendMessage(MouseClick("left", "click"))
-
-                                TouchMode.LONG_PRESS -> {
-                                    onSendMessage(MouseClick("right", "click"))
-                                    // 吃掉后续事件直到抬起，避免抬手时又被判成点击
-                                    while (true) {
-                                        val event = awaitPointerEvent()
-                                        if (event.changes.none { it.pressed }) break
-                                    }
-                                }
-
-                                TouchMode.DRAG -> {
-                                    isPressed = true
-                                    // 判定阶段已经积累的位移不能丢
-                                    if (accumulated != Offset.Zero) {
-                                        dragAccumX.addAndGet(accumulated.x.toInt())
-                                        dragAccumY.addAndGet(accumulated.y.toInt())
-                                    }
-                                    while (true) {
-                                        val event = awaitPointerEvent()
-                                        val change = event.changes
-                                            .firstOrNull { it.id == down.id }
-                                        if (change == null || !change.pressed) break
-                                        val delta = change.position - lastPos
-                                        lastPos = change.position
-                                        dragAccumX.addAndGet(delta.x.toInt())
-                                        dragAccumY.addAndGet(delta.y.toInt())
-                                        change.consume()
-                                    }
-                                    isPressed = false
-                                }
-
-                                TouchMode.SCROLL -> {
-                                    while (true) {
-                                        val event = awaitPointerEvent()
-                                        val pressed = event.changes.filter { it.pressed }
-                                        if (pressed.size < 2) break
-                                        val avgY = pressed
-                                            .map { it.position.y }.average().toFloat()
-                                        val delta = ((scrollLastY - avgY) / SCROLL_DIVISOR).toInt()
-                                        if (delta != 0) scrollAccum.addAndGet(delta)
-                                        scrollLastY = avgY
-                                        pressed.forEach { it.consume() }
-                                    }
-                                }
-                            }
-                        }
-                    },
-                contentAlignment = Alignment.Center,
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = stringResource(
-                            if (isPressed) R.string.touchpad_dragging
-                            else R.string.touchpad_idle
-                        ),
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = stringResource(R.string.touchpad_hint),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                    )
-                }
-            }
-
-            Spacer(Modifier.height(8.dp))
         }
+    }
+
+    if (confirmDisconnect) {
+        AlertDialog(
+            onDismissRequest = { confirmDisconnect = false },
+            title = { Text(stringResource(R.string.session_disconnect_confirm_title)) },
+            text = { Text(stringResource(R.string.session_disconnect_confirm_message)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmDisconnect = false
+                    // 断开前先松开按住的键，否则电脑那边会一直保持按下
+                    releaseHeldKeys()
+                    tracker.reset()
+                    onDisconnect()
+                }) {
+                    Text(
+                        text = stringResource(R.string.session_disconnect),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDisconnect = false }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            },
+        )
     }
 }
 
-/**
- * 一个按钮的描述。
- *
- * [key] 是协议里的按键标识（如 "left"），与显示文案解耦 —— 原先靠显示文案
- * 反查按键，文案一旦被翻译或改动就会失效。
- */
-private data class ButtonSpec(
-    val label: String,
-    val key: String? = null,
-    val onClick: () -> Unit,
-)
+/** 触控板 + 鼠标键条。竖屏与横屏共用。 */
+@Composable
+private fun PadArea(
+    settings: Settings,
+    haptics: Haptics,
+    heldMouseButton: String?,
+    onSendMessage: (OmniPadMessage) -> Unit,
+    onToggleMouseButton: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        TouchpadSurface(
+            pointerSensitivity = settings.pointerSensitivity,
+            scrollSensitivity = settings.scrollSensitivity,
+            haptics = haptics,
+            onPointerMove = { dx, dy -> onSendMessage(MouseMove(dx, dy)) },
+            onButtonClick = { button -> onSendMessage(MouseClick(button, "click")) },
+            onScroll = { delta -> onSendMessage(Scroll(delta)) },
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+        )
+
+        // 鼠标键紧贴触控板下沿：拇指从板上滑下来就能按到，不用横跨整个屏幕
+        KeyCapGridRow(
+            items = listOf(
+                mouseButtonSpec(
+                    button = "left",
+                    label = stringResource(R.string.mouse_left),
+                    heldLabel = stringResource(R.string.mouse_left_held),
+                    held = heldMouseButton,
+                    onToggle = onToggleMouseButton,
+                ),
+                mouseButtonSpec(
+                    button = "middle",
+                    label = stringResource(R.string.mouse_middle),
+                    heldLabel = stringResource(R.string.mouse_middle_held),
+                    held = heldMouseButton,
+                    onToggle = onToggleMouseButton,
+                ),
+                mouseButtonSpec(
+                    button = "right",
+                    label = stringResource(R.string.mouse_right),
+                    heldLabel = stringResource(R.string.mouse_right_held),
+                    held = heldMouseButton,
+                    onToggle = onToggleMouseButton,
+                ),
+            ),
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
 
 @Composable
-private fun ButtonGroup(
-    items: List<ButtonSpec>,
-    modifier: Modifier = Modifier,
-    heldKey: String? = null,
+private fun mouseButtonSpec(
+    button: String,
+    label: String,
+    heldLabel: String,
+    held: String?,
+    onToggle: (String) -> Unit,
+): KeyCapSpec {
+    val isHeld = held == button
+    return KeyCapSpec(
+        label = label,
+        active = isHeld,
+        stateDescription = if (isHeld) heldLabel else null,
+        onClick = { onToggle(button) },
+    )
+}
+
+/**
+ * 会话中断提示条。
+ *
+ * 这是「重连时不要把人踢回连接页」的落点：触控板还在原位，只是上方多一条提示，
+ * 网络抖一下不会让手感和正在输入的内容全部丢失。
+ */
+@Composable
+private fun SessionBanner(
+    state: ConnectionState,
+    reconnectAttempt: Int,
+    onBack: () -> Unit,
 ) {
-    Row(
-        modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    val reconnecting = state == ConnectionState.RECONNECTING
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = if (reconnecting) {
+            MaterialTheme.colorScheme.secondaryContainer
+        } else {
+            MaterialTheme.colorScheme.errorContainer
+        },
+        contentColor = if (reconnecting) {
+            MaterialTheme.colorScheme.onSecondaryContainer
+        } else {
+            MaterialTheme.colorScheme.onErrorContainer
+        },
     ) {
-        items.forEach { spec ->
-            val circle = items.size <= 3
-            val isHeld = spec.key != null && spec.key == heldKey
-            FilledIconButton(
-                onClick = spec.onClick,
-                modifier = Modifier.weight(1f).height(48.dp),
-                shape = if (circle) CircleShape else MaterialTheme.shapes.small,
-                colors = if (isHeld) {
-                    IconButtonDefaults.filledIconButtonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary,
-                    )
-                } else {
-                    IconButtonDefaults.filledIconButtonColors()
-                },
-            ) {
-                Text(
-                    spec.label,
-                    style = MaterialTheme.typography.labelLarge,
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            if (reconnecting) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(16.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
                 )
+            }
+            Text(
+                text = if (reconnecting) {
+                    stringResource(R.string.session_reconnecting, reconnectAttempt)
+                } else {
+                    stringResource(R.string.session_disconnected)
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(onClick = onBack) {
+                Text(stringResource(R.string.session_back))
             }
         }
     }

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      启动窗口主题（深色）。与 values/themes.xml 成对，靠系统的深色模式切换。
+      颜色对应 Color.kt 的 DarkBackground。
+    -->
+    <style name="Theme.OmniPad" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#111318</item>
+    </style>
+</resources>

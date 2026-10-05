@@ -79,6 +79,24 @@ class OmniPadConnection(
     /** 当前是第几次重连尝试（从 1 起）；未在重连时为 0。 */
     val reconnectAttempt: StateFlow<Int> = _reconnectAttempt.asStateFlow()
 
+    private val _latencyMs = MutableStateFlow<Int?>(null)
+
+    /**
+     * 最近一次心跳的往返耗时（毫秒），未测到时为 null。
+     *
+     * 远程控制里「卡不卡」是用户能直接感知的，而链路的退化往往远早于断开 ——
+     * 把心跳往返时间显示出来，用户能在操作变迟钝时就知道该靠近路由器了。
+     */
+    val latencyMs: StateFlow<Int?> = _latencyMs.asStateFlow()
+
+    /**
+     * 上一条心跳的发出时刻，用于算往返耗时。
+     *
+     * 心跳协程写、读协程读，跨线程，所以是 @Volatile。
+     */
+    @Volatile
+    private var heartbeatSentAtNanos = 0L
+
     /**
      * 是否在连续丢失心跳后自动断开，由 UI 同步用户开关。
      * 关闭时只持续发心跳、不主动断开。
@@ -308,6 +326,9 @@ class OmniPadConnection(
         outgoing?.close()
         outgoing = null
         missedHeartbeats = 0
+        // 链路已拆，上一次的往返耗时不再代表当前状况，留着会显示成假的好延迟
+        heartbeatSentAtNanos = 0L
+        _latencyMs.value = null
         heartbeatJob?.cancel()
         readerJob?.cancel()
         writerJob?.cancel()
@@ -372,6 +393,7 @@ class OmniPadConnection(
                     missedHeartbeats = 0   // 用户关闭了自动断开，继续尝试
                 }
                 sendMessage(Heartbeat)
+                heartbeatSentAtNanos = System.nanoTime()
                 delay(heartbeatIntervalMs)
             }
         }
@@ -386,7 +408,14 @@ class OmniPadConnection(
                         val msg = parseMessage(line)
                         if (msg != null) {
                             // 心跳确认在连接层内部消化，UI 无需关心
-                            if (msg is HeartbeatAck) missedHeartbeats = 0
+                            if (msg is HeartbeatAck) {
+                                missedHeartbeats = 0
+                                val sentAt = heartbeatSentAtNanos
+                                if (sentAt != 0L) {
+                                    _latencyMs.value =
+                                        ((System.nanoTime() - sentAt) / 1_000_000L).toInt()
+                                }
+                            }
                             withContext(mainDispatcher) {
                                 onMessage?.invoke(msg)
                             }

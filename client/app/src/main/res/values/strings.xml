@@ -2,31 +2,141 @@
 <resources>
     <string name="app_name">OmniPad</string>
 
+    <!-- 连接状态 -->
+    <string name="status_connected">已连接</string>
+    <string name="status_connecting">连接中</string>
+    <string name="status_reconnecting">重连中 %1$d</string>
+    <string name="status_disconnected">未连接</string>
+    <string name="status_failed">连接失败</string>
+    <string name="status_latency">%1$d ms</string>
+
     <!-- 连接页 -->
     <string name="connect_tagline">远程控制你的电脑</string>
     <string name="connect_host_label">服务器地址</string>
     <string name="connect_port_label">端口</string>
     <string name="connect_token_label">配对令牌</string>
-    <string name="connect_token_placeholder">服务端窗口顶部显示</string>
+    <string name="connect_token_placeholder">服务端窗口顶部显示的 8 位字符</string>
     <string name="connect_recent_hosts">历史连接</string>
+    <string name="connect_recent_hint">轻点连接，长按删除</string>
+    <string name="connect_recent_just_now">刚刚</string>
+    <string name="connect_recent_minutes">%1$d 分钟前</string>
+    <string name="connect_recent_hours">%1$d 小时前</string>
+    <string name="connect_recent_days">%1$d 天前</string>
     <string name="connect_action">连接</string>
-    <string name="connect_failed_hint">连接失败，请检查地址、端口和配对令牌</string>
-    <string name="connect_reconnecting">连接已断开，正在重连（第 %1$d 次）…</string>
+    <string name="connect_cancel_reconnect">取消重连</string>
+    <string name="connect_retry">重试</string>
     <string name="connect_author">超重氢</string>
     <string name="connect_delete_title">删除记录</string>
     <string name="connect_delete_message">确定要删除 %1$s:%2$d 吗？</string>
-    <string name="action_delete">删除</string>
-    <string name="action_cancel">取消</string>
+    <string name="connect_token_reveal">显示令牌</string>
+    <string name="connect_token_hide">隐藏令牌</string>
+    <string name="connect_paste">粘贴</string>
+    <string name="connect_port_detected">已从地址中识别出端口 %1$d</string>
+
+    <!-- 连接参数校验 -->
+    <string name="error_host_blank">请填写服务器地址</string>
+    <string name="error_host_url">地址栏只填 IP 或主机名，不要带 http:// 或路径</string>
+    <string name="error_host_whitespace">地址中不能有空格</string>
+    <string name="error_host_malformed">地址包含无法识别的字符</string>
+    <string name="error_port_invalid">端口需在 1 到 65535 之间</string>
+    <string name="error_token_blank">请填写配对令牌</string>
+
+    <!-- 连接失败说明 -->
+    <string name="failure_auth_failed">配对失败</string>
+    <string name="failure_auth_failed_hint">令牌不正确。请核对电脑端窗口顶部显示的令牌，注意不含字母 I、O 和数字 0、1。</string>
+    <string name="failure_version_mismatch">协议版本不匹配</string>
+    <string name="failure_version_mismatch_hint">手机端与电脑端版本不一致，请把两端更新到同一版本后重试。</string>
+    <string name="failure_handshake_failed">握手失败</string>
+    <string name="failure_handshake_failed_hint">对方回应了内容，但不像是 OmniPad 服务端。请确认地址和端口填对了。</string>
+    <string name="failure_server_no_response">服务器无响应</string>
+    <string name="failure_server_no_response_hint">已经连上端口，但对方没有回复握手。电脑端可能卡住了，试试重启服务端。</string>
+    <string name="failure_connect_failed">无法连接</string>
+    <string name="failure_connect_failed_hint">确认电脑和手机连在同一个网络，并且电脑端已经启动。</string>
+    <string name="failure_heartbeat_timeout">连接已断开</string>
+    <string name="failure_heartbeat_timeout_hint">连续收不到心跳，网络可能不稳定。靠近路由器后重试。</string>
+    <string name="failure_server_error">服务端报告错误</string>
+    <string name="failure_server_error_hint">电脑端在处理请求时返回了错误，详情见上方信息。</string>
 
     <!-- 触控板 -->
     <string name="touchpad_idle">触摸板</string>
-    <string name="touchpad_dragging">松开以停止拖动</string>
-    <string name="touchpad_hint">点击=左键 长按=右键 拖动=移动 双指=滚动</string>
-    <string name="touchpad_text_placeholder">输入文字发送到电脑</string>
+    <string name="touchpad_dragging">正在拖动</string>
+    <string name="touchpad_text_placeholder">在这里输入，直接打到电脑上</string>
     <string name="touchpad_backspace">退格</string>
     <string name="mouse_left">左键</string>
     <string name="mouse_right">右键</string>
     <string name="mouse_middle">中键</string>
+    <string name="mouse_left_held">左键已按住</string>
+    <string name="mouse_right_held">右键已按住</string>
+    <string name="mouse_middle_held">中键已按住</string>
+    <string name="touchpad_hint">轻点左键 · 长按右键 · 双指滚动</string>
+    <string name="touchpad_accessibility">触摸板。单指拖动移动指针，轻点左键单击，长按右键单击，双指拖动滚动。</string>
+
+    <!-- 控制面板 -->
+    <string name="panel_tab_keyboard">键盘</string>
+    <string name="panel_tab_keys">按键</string>
+    <string name="panel_tab_shortcuts">快捷</string>
+    <string name="panel_section_editing">编辑</string>
+    <string name="panel_section_navigation">导航</string>
+    <string name="panel_section_modifiers">修饰键</string>
+    <string name="panel_section_function">功能键</string>
+    <string name="panel_section_system">系统</string>
+    <string name="panel_section_combos">常用组合</string>
+    <string name="key_enter">回车</string>
+    <string name="key_space">空格</string>
+    <string name="key_caps_lock">大写锁定</string>
+    <string name="key_print_screen">截屏</string>
+    <string name="keyboard_clear">清空</string>
+    <string name="keyboard_hint">输入即发送，无需按发送键</string>
+    <string name="shortcut_copy">复制</string>
+    <string name="shortcut_paste">粘贴</string>
+    <string name="shortcut_cut">剪切</string>
+    <string name="shortcut_undo">撤销</string>
+    <string name="shortcut_redo">重做</string>
+    <string name="shortcut_select_all">全选</string>
+    <string name="shortcut_save">保存</string>
+    <string name="shortcut_find">查找</string>
+    <string name="shortcut_close_window">关闭窗口</string>
+    <string name="shortcut_show_desktop">显示桌面</string>
+    <string name="shortcut_task_manager">任务管理器</string>
+    <string name="shortcut_switch_window">切换窗口</string>
+
+    <!-- 会话 -->
+    <string name="session_reconnecting">连接中断，正在重连（第 %1$d 次）</string>
+    <string name="session_disconnected">连接已断开</string>
+    <string name="session_back">返回连接页</string>
+    <string name="session_disconnect">断开</string>
+    <string name="session_disconnect_confirm_title">要断开连接吗？</string>
+    <string name="session_disconnect_confirm_message">断开后需要重新连接才能继续控制电脑。</string>
+    <string name="session_settings">设置</string>
+
+    <!-- 设置 -->
+    <string name="settings_title">设置</string>
+    <string name="settings_theme">主题</string>
+    <string name="settings_theme_system">跟随系统</string>
+    <string name="settings_theme_light">浅色</string>
+    <string name="settings_theme_dark">深色</string>
+    <string name="settings_dynamic_color">跟随壁纸取色</string>
+    <string name="settings_dynamic_color_desc">用系统壁纸的配色替换品牌蓝，仅 Android 12 及以上可用</string>
+    <string name="settings_dynamic_color_unavailable">当前系统版本不支持，需要 Android 12 及以上</string>
+    <string name="settings_pointer_sensitivity">指针速度</string>
+    <string name="settings_scroll_sensitivity">滚动速度</string>
+    <string name="settings_sensitivity_value">%1$s×</string>
+    <string name="settings_haptics">触觉反馈</string>
+    <string name="settings_haptics_desc">点击与长按时震动</string>
+    <string name="settings_keep_screen_on">保持屏幕常亮</string>
+    <string name="settings_keep_screen_on_desc">控制期间不自动熄屏</string>
+    <string name="settings_auto_disconnect">断线自动断开</string>
+    <string name="settings_auto_disconnect_desc">连续 15 秒收不到心跳时判定连接已断</string>
+    <string name="settings_auto_reconnect">断线自动重连</string>
+    <string name="settings_auto_reconnect_desc">意外断开后按退避序列自动重试约 30 秒</string>
+    <string name="settings_close">关闭</string>
+    <string name="state_locked">已锁定</string>
+    <string name="state_unlocked">未锁定</string>
+
+    <!-- 通用 -->
+    <string name="action_delete">删除</string>
+    <string name="action_cancel">取消</string>
+    <string name="action_confirm">确定</string>
 
     <!-- 连接状态提示 -->
     <string name="error_server">服务器错误: %1$s</string>

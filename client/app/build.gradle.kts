@@ -103,11 +103,18 @@ dependencies {
     implementation(composeBom)
 
     implementation("androidx.compose.material3:material3")
+    // 触控板页要用到 Mouse / Keyboard / ContentPaste / PowerSettingsNew 等图标，
+    // 这些不在 material-icons-core 里。R8 只会保留真正引用到的图标，release 包
+    // 体积基本不受影响（见 CHANGELOG 里的体积对比）。
+    implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.activity:activity-compose:1.8.2")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
+    // viewModel() 组合函数 + viewModelScope。连接状态放在 ViewModel 里跨旋转存活，
+    // 这是修掉「转屏掉线」的关键依赖。
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
 
     testImplementation("junit:junit:4.13.2")

@@ -1,4 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.OmniPad" parent="android:Theme.Material.Light.NoActionBar" />
+    <!--
+      启动窗口主题（浅色）。
+
+      windowBackground 必须和 Compose 首帧的背景同色（Color.kt 的 LightBackground），
+      否则冷启动时会先闪一下别的颜色再被 Compose 覆盖。
+
+      上一版这里写的是平台浅色主题，而 App 恒定深色 —— 深色模式下每次启动都闪白屏，
+      且 enableEdgeToEdge 会据此把状态栏图标判成深色，在深色界面上几乎看不见。
+      values-night/ 下有一份深色对应实现。
+    -->
+    <style name="Theme.OmniPad" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">#FDFBFF</item>
+    </style>
 </resources>
