@@ -459,6 +459,209 @@ beta1.6 是异类（7 个版本里 5 个遵循约定）。约定已写进 `AGENT
 
 ---
 
+## 第三轮：客户端 UI/UX 全面改造
+
+**触发**：用户要求「全面改进客户端的 ui 观感和交互逻辑」。
+**约束**：不动协议 —— 全部改进只用现有 10 种消息类型，服务端一行未改。
+
+审阅客户端全部 11 个 Kotlin 文件（1478 行）后，按「会真的坏掉」优先排序。
+
+### 🔴 33. 转屏必然掉线
+
+**位置**：`MainActivity.kt:54`（`private val connection = OmniPadConnection(lifecycleScope)`）、`:132`（`onDestroy` 里 `disconnect()`）
+
+`connection` 是 Activity 字段，manifest 没配 `configChanges`，所以每次转屏都重建
+Activity → `onDestroy` → 断开。而且 `disconnect()` 会置 `closingByUser = true`，
+**自动重连也救不回来**。
+
+- [x] 状态上提到 `MainViewModel`（新增），连接对象随 ViewModel 存活，旋转不再重建
+- [x] `MainActivity` 从 135 行瘦到 55 行，只负责主题、系统栏与内容装配
+- [x] 顺带修掉监听器泄漏：原监听器注册在 `LaunchedEffect(Unit)` 里但从不注销，
+      lambda 持有 Activity；现在捕获的是 ViewModel，且生命周期与之一致
+
+### 🔴 34. 网络抖一下就把用户踢回连接页
+
+**位置**：`MainActivity.kt:102`（`if (state == CONNECTED) 触控板 else 连接页`）
+
+链路一断就进 `RECONNECTING`，界面立刻切回连接页 —— 触控板消失、手感中断。
+
+- [x] 引入会话状态 `inSession`：进入过触控板后，`RECONNECTING` 期间**留在原页**，
+      上方只多一条提示条（含「返回连接页」按钮）
+- [x] 真机实测：杀掉服务端后触控板仍在原位，提示条显示「连接中断，正在重连（第 4 次）」，
+      服务端恢复后自动重连成功
+
+### 🔴 35. 慢速滚动完全没反应
+
+**位置**：`TouchpadScreen.kt:448`（原 `((scrollLastY - avgY) / 3f).toInt()`）
+
+每个事件独立取整，小数余量被丢掉。慢慢滑两指时每次增量都 < 3px，`toInt()` 恒为 0 ——
+**输出一直是 0，界面毫无反应**。
+
+- [x] 改为浮点累加器，余量带到下一次：`acc += delta; val n = acc.toInt(); acc -= n`
+
+### 🔴 36. 慢速移动指针同样丢精度
+
+**位置**：`TouchpadScreen.kt:434`（原 `dragAccumX.addAndGet(delta.x.toInt())`）
+
+与第 35 条同源。想精确定位时指针纹丝不动。
+
+- [x] 同样改为浮点累加
+
+### 🔴 37. 拖动的最后一段位移被丢掉
+
+**位置**：`TouchpadSurface.kt` 拖动循环（原 `if (change == null || !change.pressed) break`）
+
+抬手事件里也带着从最后一个 MOVE 到抬手位置之间的位移，原来的写法直接 `break` 丢掉。
+**抓包实测：140px 的滑动只发出 128px 的位移**，表现为指针总停在手指停顿位置前面一点，
+精细拖动（拖窗口边缘、选文字）会持续偏短。
+
+- [x] 先算完 delta 再判断是否抬起。复测：31 条 `mouse_move` 累加恰好 **140px**
+
+### 🔴 38. 锁定的修饰键与电脑实际状态不一致（Ctrl+点击失效）
+
+**位置**：`ControlPanel.kt` 原 `modifierSequence`
+
+原来每次敲键都给它包一层 `down`/`up`。单个组合键看起来能work，但敲完第一个键后
+电脑上的 Ctrl 其实已经抬起、界面却还亮着。抓包实测：
+
+```
+ctrl down                          ← 锁定 Ctrl
+ctrl down / tab press / ctrl up    ← 敲 Tab
+mouse_click left click             ← 此刻电脑上 Ctrl 已抬起 → Ctrl+点击 静默失效
+```
+
+- [x] 锁定的修饰键在点按时按下、解锁时释放，**敲键不再夹带 down/up**
+- [x] 复测序列变为：`ctrl down` → `tab press` → `mouse_click left click` → `ctrl up`，
+      全程电脑上的 Ctrl 保持按下
+
+### 🔴 39. 鼠标键切换时会残留按住状态
+
+**位置**：`TouchpadScreen.kt` 原 `toggleMouseButton`
+
+`heldMouseButton` 是单值，从「按住左键」直接切到「右键」时只发 `right down`，
+**左键在 Windows 侧永远处于按下**，直到用户手动再点一次。
+
+- [x] 切换时先补发上一个键的 `up`。抓包确认：`left up` 与 `right down` 成对出现
+
+### 🟠 40. 触控板填充色与页面背景完全相同
+
+深色 `#111318`、浅色 `#FDFBFF` —— `surface` 与 `background` 在本主题里是同一个值，
+直接铺 `surface` 会让触控板融进页面、只剩一圈描边。
+
+- [x] 改用 `Surface(tonalElevation = 4.dp)`。这是 M3 里「比背景高一层」的标准做法
+      （会按高度叠一层极淡的 surfaceTint），两种主题下都得到清晰但不喧闹的层次
+- [x] 真机实测：浅色下触控板 `#E5ECF8` vs 背景 `#FDFBFF`，层次可辨
+- [x] 控制面板同样加 `tonalElevation = 2.dp`（横屏时它是独立一栏，与背景同色会显得漂浮）
+
+### 🟠 41. 连接页内容顶对齐，下方空一大片
+
+`verticalScroll` 会把 Column 高度撑成视口高度，默认 `Top` 排列导致内容全挤在顶部。
+原版是居中的，重写时丢了。
+
+- [x] 加 `verticalArrangement = Arrangement.Center`（内容超过一屏时自然退化成可滚动）
+
+### 🟠 42. `fillMaxWidth().widthIn(max = 520.dp)` 上限完全无效
+
+`fillMaxWidth` 先把 `minWidth` 顶到父容器宽度，之后 `widthIn` 的 `maxWidth` 与这个
+`minWidth` 冲突，`Constraints.constrain` 取 min 的结果仍是父容器宽度。竖屏 360dp 本来
+就窄于 520dp 所以一直没暴露；**横屏一测，表单直接拉满 800dp**。
+
+- [x] 调整顺序为 `widthIn(max).fillMaxWidth()`。复测：横屏下表单 472dp 宽、居中
+
+### 🟠 43. `enableEdgeToEdge()` 的刘海设置不生效，横屏留一条黑边
+
+真机（OPPO ColorOS / Android 11）实测：横屏时窗口被刘海裁掉 56px，
+`dumpsys window` 里 `mFrame=[56,0][1600,720]`、`mAttrs` 中**没有** `layoutInDisplayCutoutMode`。
+
+根因：`enableEdgeToEdge()` 内部是**就地修改** `window.attributes` 返回的对象、
+不经过 `setAttributes`，部分 OEM 上不生效。
+
+- [x] 在 `MainActivity` 用 `window.attributes = window.attributes.apply { ... }`
+      显式走一遍 setter。复测：`mAttrs` 出现 `layoutInDisplayCutoutMode=shortEdges`，
+      `mFrame=[0,0][1600,720]`，黑边变成页面背景色
+- 内容仍靠 `WindowInsets.safeDrawing` 避开刘海，所以刘海区被背景填满而非留黑
+
+### 🟠 44. `windowBackground` 不生效，启动会闪错色
+
+**位置**：`res/values/themes.xml`
+
+实测（模拟器与真机均复现）：把 `windowBackground` 改成品红/绿做对照实验，屏幕底色
+**仍是纯黑**；`aapt2 dump resources` 确认资源已正确打进 APK。同时 `windowBackground`
+只跟随**系统**深色模式，而用户可以在设置里手动切主题 —— 系统浅色 + App 深色时
+窗口背景会从底下透出来。
+
+- [x] 背景改由 Compose 画（`OmniPadApp` 根 `Box` 上 `.background(colorScheme.background)`），
+      保证底色永远跟当前生效的主题一致
+- [x] `themes.xml` / `values-night/themes.xml` 仍按系统深色模式提供启动窗口底色
+      （冷启动首帧用），并补上 `values-night` 一份（原来只有浅色一份，
+      而 App 当时恒定深色，等于每次启动都闪白屏）
+
+### 🟡 45. 其余交互改进（无对应缺陷，属主动优化）
+
+- **实时键盘**：由「输入框 + 发送按钮」改为边打边发。新增纯逻辑类 `TextInputTracker`
+  做差分：排除输入法合成区间（拼音还在候选框时绝不发出去），算出公共前缀后
+  退格 + 补发。支持退格、选中替换、光标中间插入、emoji（按 UTF-16 码元计数，
+  与 Windows 编辑框的退格单位一致）
+- **双指轻点 = 右键**：触控板的通用约定，比长按更快
+- **触觉反馈**：原先全项目零触觉。远程控制时屏幕本身不动，震动是唯一的本地确认通道。
+  用 `View.performHapticFeedback` 而非 Compose 的 `HapticFeedbackType` ——
+  后者映射的 `TextHandleMove` 是 API 27 常量，minSdk 26 会踩空
+- **触摸点涟漪**：拖动时在触点画一圈淡主色，状态只在绘制阶段读取，不触发重组
+- **去掉 16ms 轮询循环**：原来用 `while(true) { delay(16) }` 定期转发累加值，
+  空闲时也在跑，还给每次拖动加最多 16ms 延迟。指针事件本身按帧到达，无需二次节流
+- **链路健康指示**：顶栏显示「已连接 · N ms」（心跳往返耗时）。链路退化远早于断开，
+  用户能在操作变迟钝时就察觉。实测真机 USB 转发下 2ms、模拟器 6-7ms
+- **保持屏幕常亮**：用手机当键盘打字时，屏幕不该因为没碰手机而熄灭
+- **断开确认对话框**：断开是 `closingByUser`，自动重连不会兜底，误触代价高
+- **无障碍**：触控板加 `contentDescription` 与 `onClick`/`onLongClick` 语义动作
+  （原先零 `semantics`，TalkBack 用户完全无法操作）；按键的锁定状态用
+  `stateDescription` 播报
+- **协议键与显示文案解耦**：原修饰键/方向键/功能键用 `label.lowercase()` 反查协议键，
+  文案一被翻译就会往服务端发非法键名。同一个文件里鼠标键早已专门修过这个坑，
+  但另外三处没改 —— 现已全部改为闭包捕获
+- **键盘弹起后够不到连接按钮**：原布局不滚动也不处理 IME 内边距
+- **连接参数校验**：新增纯函数 `EndpointValidator`（22 个用例）。原实现地址留空会直接
+  拿去连接、把 Java 异常原文显示给用户；端口留空静默变成 5800；把
+  `192.168.1.5:5800` 整段粘进地址框会当成主机名
+- **失败原因常驻显示**：原来只有 3.5 秒的 Toast，消失后界面只剩一句通用提示，
+  分不清是令牌错了还是电脑没开机。现在每种失败都有「结论 + 下一步该做什么」
+
+### 🟡 46. 设置项无处可放
+
+原来只有一个「自动断开」开关，而且做成了顶栏里一个**没有任何文字标签**的裸 `Switch`，
+用户不可能知道那是什么。
+
+- [x] 新增 `SettingsStore`（8 项，SharedPreferences 持久化）与设置面板
+- [x] 主题三选（跟随系统 / 浅色 / 深色）+ 跟随壁纸取色（API 31+，低版本显示为禁用并说明原因）
+- [x] 指针速度 / 滚动速度（离散档位，0.5×–3×）
+- [x] 触觉反馈 / 保持常亮 / 断线自动断开 / 断线自动重连
+- [x] 真机实测：设备为深色模式下手动切浅色，**状态栏图标同步翻转为深色**
+      （`WindowInsetsControllerCompat` 跟随实际生效的主题，而不是系统主题）
+
+### 🟡 47. 本轮无法自动化验证的项
+
+- [ ] **双指手势（双指轻点=右键、双指滚动）**：`adb shell input` 不支持多点触控；
+      尝试用 `sendevent` 直接写 `/dev/input/event1` 合成 protocol-B 事件，
+      被 SELinux 拒绝（`shell` 虽在 `input` 组，但策略不允许写输入设备），
+      `adb root` 在正式版固件上亦不可用。**需人工验证**
+- [x] ~~R8 运行时验证~~ —— 本轮已补：release 包装到真机跑通完整流程
+      （连接 → 握手 → 触控板 → 图标渲染），冷启动 1290ms，
+      对比 debug 包冷启动头几帧 3300ms/帧
+
+### 验证记录（第三轮）
+
+| 项 | 结果 |
+|---|---|
+| 客户端单元测试 | **79 个全过**（新增 43：`EndpointValidator` 22 + `TextInputTracker` 21） |
+| 协议级抓包验证 | 轻点→左键、长按→右键、拖动→精确 140px、鼠标键切换补 `up`、修饰键保持、快捷组合、逐字 `text_input`、退格 —— 全部符合预期 |
+| 自动重连 | 杀掉服务端 → 提示条出现 → 重启服务端 → 自动重连成功 |
+| 握手 | 真机 ↔ 真服务端 `handshake OK, version=1.1` |
+| 构建 | debug + release(R8) + `lintVitalRelease` 全通过 |
+| release 产物 | 1.22 MB（R8 前 5.06 MB），签名有效，入口 Activity 未混淆，8 个关键字符串资源存活 |
+| 真机渲染 | 深色/浅色、竖屏/横屏、三个标签页、设置面板、重连提示条 —— 均已截图核对 |
+
+---
+
 ## 建议的推进顺序
 
 ### 第一批（阻塞项，需要你操作）— ✅ 已完成
@@ -501,6 +704,7 @@ beta1.6 是异类（7 个版本里 5 个遵循约定）。约定已写进 `AGENT
 - 第 30 条：配对令牌明文传输。纯 TCP 无 TLS，局域网内可嗅探；Tailscale 内因
   WireGuard 加密而安全。需要时再上 TLS
 - 第 31 条：为 beta1.4 补 tag（可选，该版本从未发布）
+- 第 47 条：双指手势需人工验证（`adb` 无法驱动多点触控，`sendevent` 被 SELinux 拦住）
 
 已全部完成（本轮）：
 

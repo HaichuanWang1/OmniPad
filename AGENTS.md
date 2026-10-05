@@ -29,7 +29,14 @@ OmniPad/
 │   ├── test_tcp_server.py  # 分帧与连接生命周期测试
 │   └── requirements.txt
 ├── client/                 # Kotlin 手机端（TCP 客户端）
-│   └── app/src/test/       # JVM 单元测试（协议编解码、连接层）
+│   └── app/src/
+│       ├── main/java/com/omnipad/client/
+│       │   ├── MainActivity.kt   # 只负责主题、系统栏与内容装配
+│       │   ├── MainViewModel.kt  # 全部界面状态（跨旋转存活）
+│       │   ├── data/             # SettingsStore（持久化设置）
+│       │   ├── network/          # 协议、连接层、参数校验、历史记录
+│       │   └── ui/               # 主题 / 组件 / 页面 / 实时键盘 / 工具
+│       └── test/                 # JVM 单元测试（协议、连接层、校验、键盘差分）
 └── dist/                   # 发布产物（不入库，由 GitHub Release 分发）
 ```
 
