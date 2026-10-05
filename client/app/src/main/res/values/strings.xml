@@ -11,6 +11,7 @@
     <string name="connect_recent_hosts">历史连接</string>
     <string name="connect_action">连接</string>
     <string name="connect_failed_hint">连接失败，请检查地址、端口和配对令牌</string>
+    <string name="connect_reconnecting">连接已断开，正在重连（第 %1$d 次）…</string>
     <string name="connect_author">超重氢</string>
     <string name="connect_delete_title">删除记录</string>
     <string name="connect_delete_message">确定要删除 %1$s:%2$d 吗？</string>

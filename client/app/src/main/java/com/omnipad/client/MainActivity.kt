@@ -62,6 +62,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             OmniPadTheme {
                 val state by connection.connectionState.collectAsState()
+                val reconnectAttempt by connection.reconnectAttempt.collectAsState()
                 val lastError by connection.lastError.collectAsState()
                 var recentHosts by remember { mutableStateOf(hostsStore.get()) }
                 var autoDisconnect by remember { mutableStateOf(true) }
@@ -110,6 +111,7 @@ class MainActivity : ComponentActivity() {
                     ConnectScreen(
                         connectionState = state,
                         recentHosts = recentHosts,
+                        reconnectAttempt = reconnectAttempt,
                         onConnect = { host, port, token ->
                             hostsStore.add(host, port, token)
                             recentHosts = hostsStore.get()

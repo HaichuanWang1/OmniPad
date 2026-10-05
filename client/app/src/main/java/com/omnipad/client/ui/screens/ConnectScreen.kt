@@ -60,6 +60,7 @@ fun ConnectScreen(
     onConnect: (host: String, port: Int, token: String) -> Unit,
     onDeleteHost: (host: String, port: Int) -> Unit,
     modifier: Modifier = Modifier,
+    reconnectAttempt: Int = 0,
 ) {
     var host by remember { mutableStateOf("") }
     var port by remember { mutableStateOf("") }
@@ -238,6 +239,16 @@ fun ConnectScreen(
                             style = MaterialTheme.typography.titleMedium,
                         )
                     }
+                }
+
+                if (connectionState == ConnectionState.RECONNECTING) {
+                    Spacer(Modifier.height(16.dp))
+                    Text(
+                        text = stringResource(R.string.connect_reconnecting, reconnectAttempt),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        textAlign = TextAlign.Center,
+                    )
                 }
 
                 if (connectionState == ConnectionState.FAILED) {

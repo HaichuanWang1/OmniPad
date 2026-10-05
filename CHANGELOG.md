@@ -13,12 +13,18 @@
 ### 新功能
 - 握手增加配对令牌：服务端首次启动生成 8 位令牌，客户端需填入才能连接，
   堵住「任何能连上 5800 端口的人都能控制鼠标键盘」的零认证缺口
+- 客户端断线自动重连：按退避序列重试（累计约 30 秒），期间界面显示第几次尝试；
+  用户主动断开、以及认证失败与版本不匹配都不会触发重连
 - 服务端协议字段校验，非法参数返回 `INVALID_PARAMS` 而不是静默失败
+- 服务端强制 `docs/schema.json` 声明的 `additionalProperties`，字段名写错
+  （如 `dx` 写成 `dX`）不再被静默忽略
 - 客户端 JVM 单元测试（协议编解码与连接层）
 - 打包脚本 `scripts/package.ps1`，按发布规范产出 `dist/` 资产
-- 新增 CI：服务端测试（windows-latest）+ 客户端编译（ubuntu-latest）
+- 新增 CI：服务端测试（windows-latest）+ 客户端编译与单元测试（ubuntu-latest）
 
 ### 修复
+- 服务端收到非对象 JSON（`[1,2]`、`42`、`"hi"`）时不再因未捕获的
+  `AttributeError` 直接断开连接，改为回 `INVALID_PARAMS`
 - 服务端 TCP 分片按字节缓冲，修复中文输入损坏
 - 服务端扩展键补充 `KEYEVENTF_EXTENDEDKEY` 标志
 - 服务端握手失败时真正关闭连接（此前 handler 返回 `False` 被忽略）

@@ -96,6 +96,14 @@ private class FakeServer(
         }
     }
 
+    /** 硬掐断当前连接，但服务端继续接受下一条 —— 模拟网络抖动。 */
+    fun dropClient() {
+        try {
+            client?.close()
+        } catch (_: Exception) {
+        }
+    }
+
     override fun close() {
         try {
             client?.close()
@@ -139,10 +147,15 @@ class OmniPadConnectionTest {
      */
     private fun newConnection(
         heartbeatIntervalMs: Long = OmniPadConnection.HEARTBEAT_INTERVAL_MS,
+        reconnectDelaysMs: List<Long> = listOf(20L, 20L, 20L),
     ): OmniPadConnection {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         scopes += scope
-        return OmniPadConnection(scope, heartbeatIntervalMs, Dispatchers.Unconfined)
+        // 默认关掉自动重连：多数用例关心的是「一次连接尝试的结果」，
+        // 开着重连会让它们先去等退避。重连相关的用例自己打开。
+        return OmniPadConnection(
+            scope, heartbeatIntervalMs, Dispatchers.Unconfined, reconnectDelaysMs,
+        ).apply { autoReconnect = false }
     }
 
     private fun awaitState(
@@ -301,13 +314,14 @@ class OmniPadConnectionTest {
     }
 
     @Test
-    fun `连续丢失心跳后自动断开`() {
+    fun `连续丢失心跳后判定断开`() {
         FakeServer(::ackHandshake).use { server ->
             val conn = newConnection(heartbeatIntervalMs = 40)
             conn.connect("127.0.0.1", server.port, "T")
             awaitState(conn, ConnectionState.CONNECTED)
 
-            awaitState(conn, ConnectionState.DISCONNECTED)
+            // 关掉自动重连时是终态。曾经连上过却以失败收场，故为 FAILED 而非 DISCONNECTED。
+            awaitState(conn, ConnectionState.FAILED)
             assertEquals(ConnectionNotice.HeartbeatTimeout, conn.lastError.value)
         }
     }
@@ -355,6 +369,174 @@ class OmniPadConnectionTest {
 
             conn.connect("127.0.0.1", server.port, "T")
             awaitState(conn, ConnectionState.CONNECTED)
+        }
+    }
+
+    // ---- 自动重连 ----
+
+    @Test
+    fun `默认开启自动重连`() {
+        // 默认值本身也是行为：生产代码靠它扛住 WiFi 抖动。
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        scopes += scope
+        assertTrue(OmniPadConnection(scope).autoReconnect)
+    }
+
+    @Test
+    fun `对端断开后自动重连并恢复`() {
+        var handshakes = 0
+        FakeServer { line, server ->
+            if (typeOf(line) == "handshake") {
+                // 第一次假装服务端假死，逼出重连；第二次正常确认。
+                if (++handshakes == 1) server.stopResponding()
+                else server.push("""{"type":"handshake_ack","version":"1.0"}""")
+            }
+        }.use { server ->
+            val conn = newConnection(reconnectDelaysMs = listOf(30L))
+            conn.autoReconnect = true
+            conn.connect("127.0.0.1", server.port, "T")
+
+            awaitState(conn, ConnectionState.CONNECTED)
+            assertEquals("应当自动重连并再次握手", 2, handshakes)
+            assertEquals("连上后重连计数归零", 0, conn.reconnectAttempt.value)
+        }
+    }
+
+    @Test
+    fun `重连期间状态为 RECONNECTING 且计数递增`() {
+        FakeServer { line, server ->
+            if (typeOf(line) == "handshake") server.stopResponding()
+        }.use { server ->
+            // 退避给得长一些，便于稳定观察到 RECONNECTING 这个中间态。
+            val conn = newConnection(reconnectDelaysMs = listOf(300L, 300L))
+            conn.autoReconnect = true
+            conn.connect("127.0.0.1", server.port, "T")
+
+            awaitState(conn, ConnectionState.RECONNECTING)
+            assertEquals(1, conn.reconnectAttempt.value)
+        }
+    }
+
+    @Test
+    fun `退避用尽后落到 FAILED 且不再重试`() {
+        var handshakes = 0
+        FakeServer { line, server ->
+            if (typeOf(line) == "handshake") {
+                handshakes++
+                server.stopResponding()
+            }
+        }.use { server ->
+            val conn = newConnection(reconnectDelaysMs = listOf(10L, 10L, 10L))
+            conn.autoReconnect = true
+            conn.connect("127.0.0.1", server.port, "T")
+
+            awaitState(conn, ConnectionState.FAILED)
+            assertEquals("初次 + 3 次重连", 4, handshakes)
+
+            Thread.sleep(150)
+            assertEquals("退避用尽后不该继续重试", 4, handshakes)
+            assertEquals(0, conn.reconnectAttempt.value)
+        }
+    }
+
+    @Test
+    fun `认证失败不触发重连`() {
+        var handshakes = 0
+        FakeServer { line, server ->
+            if (typeOf(line) == "handshake") {
+                handshakes++
+                server.push("""{"type":"error","code":"AUTH_FAILED","message":"令牌不正确"}""")
+            }
+        }.use { server ->
+            val conn = newConnection(reconnectDelaysMs = listOf(20L, 20L, 20L))
+            conn.autoReconnect = true
+            conn.connect("127.0.0.1", server.port, "WRONG")
+
+            awaitState(conn, ConnectionState.FAILED)
+            Thread.sleep(200)
+            assertEquals("认证失败重试多少次都是同样的错，不该重连", 1, handshakes)
+        }
+    }
+
+    @Test
+    fun `版本不匹配不触发重连`() {
+        var handshakes = 0
+        FakeServer { line, server ->
+            if (typeOf(line) == "handshake") {
+                handshakes++
+                server.push(
+                    """{"type":"error","code":"VERSION_MISMATCH","message":"expected 1.0"}"""
+                )
+            }
+        }.use { server ->
+            val conn = newConnection(reconnectDelaysMs = listOf(20L, 20L, 20L))
+            conn.autoReconnect = true
+            conn.connect("127.0.0.1", server.port, "T")
+
+            awaitState(conn, ConnectionState.FAILED)
+            Thread.sleep(200)
+            assertEquals(1, handshakes)
+        }
+    }
+
+    @Test
+    fun `关闭自动重连时掉线即为终态`() {
+        var handshakes = 0
+        FakeServer { line, server ->
+            if (typeOf(line) == "handshake") {
+                handshakes++
+                if (handshakes == 1) server.push("""{"type":"handshake_ack","version":"1.0"}""")
+            }
+        }.use { server ->
+            val conn = newConnection(reconnectDelaysMs = listOf(20L))
+            conn.autoReconnect = false
+            conn.connect("127.0.0.1", server.port, "T")
+            awaitState(conn, ConnectionState.CONNECTED)
+
+            server.dropClient()
+            awaitState(conn, ConnectionState.DISCONNECTED)
+
+            Thread.sleep(150)
+            assertEquals("关掉重连后不该再发起连接", 1, handshakes)
+        }
+    }
+
+    @Test
+    fun `重连等待期间用户断开则停止重连`() {
+        var handshakes = 0
+        FakeServer { line, server ->
+            if (typeOf(line) == "handshake") {
+                handshakes++
+                if (handshakes == 1) server.stopResponding()
+                else server.push("""{"type":"handshake_ack","version":"1.0"}""")
+            }
+        }.use { server ->
+            // 退避比观察窗口长，好在重连真正发起之前按下断开。
+            val conn = newConnection(reconnectDelaysMs = listOf(400L))
+            conn.autoReconnect = true
+            conn.connect("127.0.0.1", server.port, "T")
+
+            awaitState(conn, ConnectionState.RECONNECTING)
+            conn.disconnect()
+            assertEquals(ConnectionState.DISCONNECTED, conn.connectionState.value)
+
+            Thread.sleep(700)   // 超过退避时间
+            assertEquals("用户主动断开后不该再发起连接", 1, handshakes)
+            assertEquals(ConnectionState.DISCONNECTED, conn.connectionState.value)
+        }
+    }
+
+    @Test
+    fun `心跳超时在开启重连时转为重连而非终态`() {
+        FakeServer(::ackHandshake).use { server ->
+            // ackHandshake 只确认握手、不确认心跳，所以心跳必然超时。
+            val conn = newConnection(heartbeatIntervalMs = 40, reconnectDelaysMs = listOf(500L))
+            conn.autoReconnect = true
+            conn.connect("127.0.0.1", server.port, "T")
+            awaitState(conn, ConnectionState.CONNECTED)
+
+            // 关键：应当去重连，而不是停在 FAILED 让用户手动重连。
+            awaitState(conn, ConnectionState.RECONNECTING)
         }
     }
 }
