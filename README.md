@@ -210,7 +210,7 @@ python test_runtime.py      # 数据目录、单实例、原子写、日志（44
 python test_control.py      # 本机控制通道（25）
 python test_tcp_server.py   # 分帧、连接生命周期与断开原因（22）
 python test_handlers.py     # 握手、配对令牌、字段校验（46）
-python test_tray.py         # 托盘图标的 Win32 结构体与图标文件（24）
+python test_tray.py         # 托盘图标的 Win32 结构体与图标文件（23）
 python test_server_ui.py    # 界面纯逻辑（36）
 python test_integration.py  # 端到端：真进程 + 真 CLI + 真 socket + 构建脚本（33）
 ```

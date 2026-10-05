@@ -887,7 +887,7 @@ UnicodeEncodeError: 'charmap' codec can't encode characters in position 0-6
 
 | 项 | 结果 |
 |---|---|
-| 服务端测试 | **264 个全过**（第四轮新增 207：`state` 34 + `runtime` 44 + `control` 25 + `tray` 24 + `integration` 33 + 扩充 47） |
+| 服务端测试 | **263 个全过**（第四轮新增 206：`state` 34 + `runtime` 44 + `control` 25 + `tray` 23 + `integration` 33 + 扩充 47） |
 | CI | 新增 PyInstaller 打包步骤、发布包内容校验与「连打两次比对 SHA256」的可复现守卫；`PYTHONIOENCODING=cp1252` 的用例复现了英文 Windows 环境 |
 | 端到端 | 真进程 + 真 CLI + 真 socket：状态文件出现、客户端显示 `online`、错误令牌显示 `rejected(AUTH_FAILED)`、`--stop` 优雅退出 |
 | exe | 两个 exe 均实测可用；`--version` / `--status`（退出码 3）/ `--stop`（退出码 0）/ `--headless` 全部正确 |
