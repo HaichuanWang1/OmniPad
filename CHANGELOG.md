@@ -54,6 +54,9 @@
 - 修正 README 中不存在 `server_ui.exe` 的说明，补上配对令牌的使用步骤；
   标题与下载说明不再钉死版本号（此前已漂移两次）
 - 新增 `.editorconfig`
+- release 开启 **R8 压缩与资源收缩**，APK 从 5.06 MB 降到 1.10 MB（缩减 78%）。
+  `proguard-rules.pro` 只补了崩溃堆栈可读性 —— 客户端没有任何反射查找，
+  不需要 keep 规则
 - 新增协议版本一致性守卫，自动比对服务端常量、客户端默认值与文档三处
 - `dist/` 发布产物不再入库，改由 GitHub Release 分发
 - 补上缺失的 `gradlew` 与 `.gitattributes`，修复 CI 客户端任务

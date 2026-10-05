@@ -98,13 +98,15 @@ OmniPad/
 │   ├── test_server_ui.py    # 客户端历史淘汰等纯逻辑测试
 │   └── test_tcp_server.py   # 分帧与连接生命周期测试
 └── client/                  # Android 客户端
-    └── app/src/
-        ├── main/java/com/omnipad/client/
-        │   ├── ui/theme/    # Material 3 主题（科技蓝深色风）
-        │   ├── ui/screens/  # ConnectScreen · TouchpadScreen
-        │   ├── network/     # Protocol.kt · OmniPadConnection.kt
-        │   └── MainActivity.kt
-        └── test/            # JVM 单元测试
+    └── app/
+        ├── proguard-rules.pro   # R8 规则（仅补崩溃堆栈可读性）
+        └── src/
+            ├── main/java/com/omnipad/client/
+            │   ├── ui/theme/    # Material 3 主题（科技蓝深色风）
+            │   ├── ui/screens/  # ConnectScreen · TouchpadScreen
+            │   ├── network/     # Protocol.kt · OmniPadConnection.kt
+            │   └── MainActivity.kt
+            └── test/            # JVM 单元测试
 ```
 
 ## 协议
@@ -190,6 +192,8 @@ zip 的条目时间戳固定，因此同样的源码每次产出**完全相同�
 - TCP_NODELAY 禁用 Nagle 算法，降低小包延迟
 - 服务端 ctypes 直接注入，无额外进程开销
 - 出站消息经单一写协程串行发送，保证组合键与移动序列的顺序
+- release 开启 R8 压缩与资源收缩，APK 从 5.06 MB 降到 1.10 MB；
+  `proguard-rules.pro` 只补了崩溃堆栈可读性，未加 keep 规则（客户端无反射查找）
 
 ## 许可证
 

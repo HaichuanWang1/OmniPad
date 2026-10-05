@@ -61,7 +61,14 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // 客户端没有任何反射查找，Compose 与协程自带 consumer 规则，
+            // 因此不需要额外的 keep 规则；proguard-rules.pro 只补了崩溃堆栈可读性。
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
             if (hasSigningConfig) {
                 signingConfig = signingConfigs.getByName("release")
             }

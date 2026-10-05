@@ -197,7 +197,10 @@ fun sendMessage(msg: OmniPadMessage) {
 - [x] 服务端加字段校验：`protocol.InvalidParams` + `handlers._int_field` / `_text_field`，
       非法类型回 `INVALID_PARAMS` 而不是让 ctypes 抛异常把连接搞断；
       客户端用 `JSONObject` 构造消息，本身就是类型安全的
-- [ ] `additionalProperties: false` 仍未强制（需要引入 JSON Schema 校验器，收益有限）
+- [x] `additionalProperties: false` 已强制：`protocol.ALLOWED_FIELDS` + `handle_message`
+      逐条拒绝多余字段。**没有**引入 JSON Schema 校验器 —— 发布包里不含 `docs/`，
+      且服务端刻意只用标准库；改为手写字段表，再由 `SchemaConformanceTest`
+      与 `schema.json` 逐项比对，漂移会被测试拦住
 
 ---
 
@@ -446,7 +449,13 @@ beta1.6 是异类（7 个版本里 5 个遵循约定）。约定已写进 `AGENT
 - [x] 明确「不做版本协商」并写明理由：双端始终一起发布，没有第三方客户端；
       协商会引入真实协议面，收益只多版本共存时才体现
 - [x] 补 `.editorconfig`
-- [ ] 待办：R8 压缩混淆、`server_ui.py` 测试
+- [x] release 开启 R8：APK **5.06 MB → 1.10 MB**（缩减 78%）。客户端零反射
+      （`Class.forName` / `getDeclaredMethod` / `::class.java` 全无命中），故无需
+      keep 规则。已验证：`minifyReleaseWithR8` 通过（R8 会因缺失类而构建失败）、
+      签名有效、入口 Activity 未被混淆、`mapping.txt` 保留行号、关键字符串资源
+      未被资源收缩误删
+- [x] 补 `server_ui.py` 纯逻辑测试（11 个用例，含淘汰循环的终止路径）
+- [x] 第 32 条已全部完成
 
 ---
 
@@ -487,21 +496,21 @@ beta1.6 是异类（7 个版本里 5 个遵循约定）。约定已写进 `AGENT
 
 仍未完成：
 
-- 第 8 条里的 `additionalProperties: false` 强制（需引入 JSON Schema 校验器）
-- 第 22 条的根治：升级 AGP 到 8.13+ 后恢复 lint 门禁
-- 第 25 条：若要发 `server_ui.exe`，需把 PyInstaller 纳入发布流程
-- 第 30 条：令牌明文传输（TLS 或明确使用边界）
-- 第 31 条：为 beta1.4 补 tag（可选）
-- 第 32 条：R8 压缩混淆、`server_ui.py` 测试
+- 第 25 条：若要发 `server_ui.exe`，需把 PyInstaller 纳入发布流程。
+  当前选择不发：exe 体积大、未签名会触发 SmartScreen，且服务端只用标准库
+- 第 30 条：配对令牌明文传输。纯 TCP 无 TLS，局域网内可嗅探；Tailscale 内因
+  WireGuard 加密而安全。需要时再上 TLS
+- 第 31 条：为 beta1.4 补 tag（可选，该版本从未发布）
 
-已完成（本轮）：
+已全部完成（本轮）：
 
+- 第 8 条：服务端强制 `additionalProperties`，并由 `SchemaConformanceTest`
+  与 `docs/schema.json` 逐项对齐
 - 第 22 条根治：升级到 Gradle 8.13 + AGP 8.13.2，release lint 门禁恢复开启，
   `lintVitalAnalyzeRelease` 已实际跑通
 - 第 23 条：重命名 beta1.6 的两个线上资产 —— 用 `gh api` 完成，6 个 Release 现已全部合规
 - 第 29 条：客户端断线自动重连（含状态机与 8 个用例）
-- 第 32 条中的 `.editorconfig` 与协议版本一致性守卫
-- 第 8 条中的 `additionalProperties: false` —— 已在服务端强制，并用 SchemaConformanceTest
-  与 `docs/schema.json` 逐项对齐
+- 第 32 条：协议版本递增到 1.1 + 一致性守卫、`.editorconfig`、R8 压缩
+  （APK 5.06 MB → 1.10 MB）、`server_ui.py` 测试
 - 版本号递增到 `v1.0.0-beta1.7`：main 与 beta1.6 协议不兼容，继续沿用 beta1.6
   会让打包脚本产出与线上同名却不兼容的资产
