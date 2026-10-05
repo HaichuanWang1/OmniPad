@@ -1,0 +1,34 @@
+# 编辑器统一配置。
+#
+# 行尾归属说明：入库行尾由 .gitattributes 决定（git 检出时会按它转换），
+# 本文件只负责编辑器写入时的字符集与缩进。脚本类文件的两处配置保持一致，
+# 以免编辑器保存后又被 git 转换，来回产生 diff。
+
+root = true
+
+[*]
+charset = utf-8
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.{py,kt,kts,java}]
+indent_style = space
+indent_size = 4
+
+[*.{yml,yaml,json}]
+indent_style = space
+indent_size = 2
+
+[*.md]
+# Markdown 里行尾两个空格是硬换行，不能裁掉
+trim_trailing_whitespace = false
+
+# 与 .gitattributes 保持一致：Windows 脚本 CRLF，类 Unix 脚本 LF
+[*.{bat,ps1}]
+end_of_line = crlf
+
+[gradlew]
+end_of_line = lf
+
+[*.sh]
+end_of_line = lf

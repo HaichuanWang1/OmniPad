@@ -306,7 +306,8 @@ beta1.6 是异类（7 个版本里 5 个遵循约定）。约定已写进 `AGENT
 
 - [x] 约定写入 `AGENTS.md`
 - [x] 打包脚本 `scripts/package.ps1` 按约定命名产出，从源头杜绝再犯（见第 24 条）
-- [ ] 重命名 beta1.6 已发布的两个资产（**需你操作**）
+- [x] 重命名 beta1.6 已发布的两个资产 —— 已用 `gh api` 完成，现全部 6 个 Release
+      均符合规范：`OmniPad-v1.0.0-beta1.6.apk` / `omnipad-server-v1.0.0-beta1.6.zip`
 
 ---
 
@@ -360,7 +361,9 @@ beta1.6 是异类（7 个版本里 5 个遵循约定）。约定已写进 `AGENT
 
 停在 `v1.0.0-beta1.3`，而版本已到 beta1.6；中间三个版本与本次全部改动都没记录。
 
-- [x] 补齐 beta1.4 / beta1.5 / beta1.6，并新增「未发布」段收录本次改动
+- [x] 补齐 beta1.4 / beta1.5 / beta1.6，并新增 v1.0.0-beta1.7 段收录本次改动
+- [x] README 标题与下载说明不再钉死版本号（此前已漂移两次：beta1 → beta1.6），
+      改为指向 `VERSION` 与 Releases
 
 ---
 
@@ -461,10 +464,16 @@ beta1.6 是异类（7 个版本里 5 个遵循约定）。约定已写进 `AGENT
 仍未完成：
 
 - 第 8 条里的 `additionalProperties: false` 强制（需引入 JSON Schema 校验器）
-- 第 23 条：重命名 GitHub 上已发布的 beta1.6 资产（**需你操作**）
 - 第 22 条的根治：升级 AGP 到 8.13+ 后恢复 lint 门禁
 - 第 25 条：若要发 `server_ui.exe`，需把 PyInstaller 纳入发布流程
 - 第 29 条：断线自动重连
 - 第 30 条：令牌明文传输（TLS 或明确使用边界）
 - 第 31 条：为 beta1.4 补 tag（可选）
-- 第 32 条：协议版本协商、`.editorconfig`、R8 压缩混淆、`server_ui.py` 测试
+- 第 32 条：协议版本协商、R8 压缩混淆、`server_ui.py` 测试
+
+已完成（本轮）：
+
+- 第 23 条：重命名 beta1.6 的两个线上资产 —— 用 `gh api` 完成，6 个 Release 现已全部合规
+- 第 32 条中的 `.editorconfig` —— 已补，且确认仓库内无尾随空格、无缺失尾换行，不会造成 churn
+- 版本号递增到 `v1.0.0-beta1.7`：main 与 beta1.6 协议不兼容，继续沿用 beta1.6
+  会让打包脚本产出与线上同名却不兼容的资产

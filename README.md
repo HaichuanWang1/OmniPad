@@ -1,6 +1,9 @@
-# OmniPad v1.0.0-beta1.6
+# OmniPad
 
 在局域网下使用手机作为电脑的触控板/键盘。
+
+当前版本见 [VERSION](VERSION)，发布产物见
+[Releases](https://github.com/HaichuanWang1/OmniPad/releases)。
 
 ---
 
@@ -8,8 +11,8 @@
 
 ### 电脑端（Windows）
 
-1. 从 [Release](https://github.com/HaichuanWang1/OmniPad/releases) 下载
-   `omnipad-server-v1.0.0-beta1.6.zip` 并解压
+1. 从 [Releases](https://github.com/HaichuanWang1/OmniPad/releases) 下载最新的
+   `omnipad-server-v*.zip` 并解压
 2. 需要 **Python 3.10 或更高版本**（[下载](https://www.python.org/downloads/)），
    在解压出的目录里执行：
    ```
@@ -22,7 +25,7 @@
 
 ### 手机端（Android）
 
-1. 从 Release 下载 `OmniPad-v1.0.0-beta1.6.apk` 并安装
+1. 从 Releases 下载对应版本的 `OmniPad-v*.apk` 并安装
 2. 打开 App，填入电脑上显示的 IP 地址
 3. 填入电脑上显示的配对令牌
 4. 点击「连接」
