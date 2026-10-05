@@ -65,10 +65,11 @@ while b"\n" in buffer:
 
 ⚠️ 这是**协议变更**，按 AGENTS 铁律必须先改 `docs/protocol.md` + `docs/schema.json`，再动代码。
 
-- [ ] docs 先行
-- [ ] 服务端校验
-- [ ] 客户端提交
-- [ ] 默认监听地址收紧为局域网/Tailscale 接口而非 0.0.0.0
+- [x] docs 先行（`protocol.md` 新增「配对令牌」小节与 `AUTH_FAILED`；`schema.json` 的 handshake 增加必填 `token`）
+- [x] 服务端校验（`server/pairing.py` + `handlers.on_handshake`）
+- [x] 客户端提交（`Handshake.token`，并随历史记录记住）
+- [ ] 默认监听地址仍为 `0.0.0.0` —— 有了令牌校验后不再是缺口，且收紧会影响
+      Tailscale 访问，**有意保留**
 
 ---
 
@@ -82,9 +83,9 @@ while b"\n" in buffer:
 **改法**：`git rm --cached` 该 jks、加入 `.gitignore`；口令移到未跟踪的
 `keystore.properties`（或环境变量 / `local.properties`），`build.gradle.kts` 读取之。
 
-- [ ] jks 移出版本控制
-- [ ] .gitignore 补齐
-- [ ] 口令外置
+- [x] jks 移出版本控制（`git rm --cached`，磁盘文件保留）
+- [x] .gitignore 补齐（`*.jks` / `*.keystore` / `keystore.properties`）
+- [x] 口令外置（改读 `client/keystore.properties`，附 `.example`）
 - [x] ⚠️ 密钥已泄露 —— 已决定**不轮换**，继续使用现有密钥（beta 阶段用户量小）
 
 ---
@@ -172,8 +173,8 @@ fun sendMessage(msg: OmniPadMessage) {
 
 **改法**：心跳与超时判定全部收进 `OmniPadConnection`，对外只暴露 `connectionState`；UI 只渲染状态。
 
-- [ ] 下沉到连接层
-- [ ] 监听器移入 LaunchedEffect
+- [x] 下沉到连接层
+- [x] 监听器移入 LaunchedEffect
 
 ---
 
@@ -191,9 +192,12 @@ fun sendMessage(msg: OmniPadMessage) {
 **改法**：把消息构造集中到各端一个 Protocol 模块（服务端可加 pydantic 或手写校验），
 并让 `docs/` 与 `VK_MAP` 对齐。
 
-- [ ] 文档补齐 VK 列表
-- [ ] 明确 delta 量纲
-- [ ] 双端加校验
+- [x] 文档补齐 VK 列表（改为表格，与 `VK_MAP` 逐项对齐）
+- [x] 明确 delta 量纲（说明是「格数」，服务端乘 `WHEEL_DELTA` = 120）
+- [x] 服务端加字段校验：`protocol.InvalidParams` + `handlers._int_field` / `_text_field`，
+      非法类型回 `INVALID_PARAMS` 而不是让 ctypes 抛异常把连接搞断；
+      客户端用 `JSONObject` 构造消息，本身就是类型安全的
+- [ ] `additionalProperties: false` 仍未强制（需要引入 JSON Schema 校验器，收益有限）
 
 ---
 
@@ -208,7 +212,7 @@ git 历史显示「点击被拖动吃掉」「双指滚动误触发」这类问�
 **改法**：按手势类型写**单个** `awaitEachGesture` 状态机（1 指拖动 / 1 指点击 / 1 指长按右键 /
 2 指滚动），彻底消除竞争。**这是本次重构收益最大的一处。**
 
-- [ ] 合并为单状态机
+- [x] 合并为单状态机（`awaitEachGesture` + 判定/执行两阶段，阈值取自 `viewConfiguration`）
 
 ---
 
@@ -317,7 +321,7 @@ beta1.6 是异类（7 个版本里 5 个遵循约定）。约定已写进 `AGENT
 
 - [x] 3. 修 UTF-8 分片解码（`tcp_server.py`）— `0a6de8a`
 - [x] 4. `sendMessage` 改 Channel + 单写协程 — `d11d28c`
-- [ ] 5. 握手加配对令牌（**需先改 `docs/protocol.md` + `schema.json`**）
+- [x] 5. 握手加配对令牌（**需先改 `docs/protocol.md` + `schema.json`**）— `d44fb1f`
 - [x] 6. 抽 `server/handlers.py` 消除双份 handler — `40bae26`
 - [x] 6b. 握手失败时真正关闭连接（新发现第 21 条）— `d7adda9`
 - [x] 6c. 空闲超时按文档生效（第 6 条）— `9d02359`
@@ -325,11 +329,12 @@ beta1.6 是异类（7 个版本里 5 个遵循约定）。约定已写进 `AGENT
 
 ### 第三批（重构）
 
-- [ ] 7. 合并三个手势检测器为单状态机 ← **收益最大的一处**
+- [x] 7. 合并三个手势检测器为单状态机 ← **收益最大的一处** — `3eb9758`
 - [x] 8. 心跳/监听器下沉到连接层 — `06b38c6`
-- [ ] 9. 补 `test_client.py` 边界用例 + GitHub Actions
-      （分帧与连接生命周期已有 10 个用例，见 `server/test_tcp_server.py`）
-- [ ] 22. 解决 `assembleRelease` 的 lint 阻塞（**需你选择方案**）
+- [x] 9. 补边界用例 + GitHub Actions
+      （`server/test_tcp_server.py` 10 个 + `server/test_handlers.py` 26 个，共 36 个用例；
+      `.github/workflows/ci.yml` 跑服务端测试与客户端 debug/release 双 variant 编译）
+- [x] 22. 解决 `assembleRelease` 的 lint 阻塞（采用方案 A）— `88f5d22`
 
 ### 第四批（卫生）
 
@@ -339,5 +344,8 @@ beta1.6 是异类（7 个版本里 5 个遵循约定）。约定已写进 `AGENT
 
 ---
 
-至此 fix.md 中除第 23 条（重命名 GitHub 上已发布的 beta1.6 资产，需你操作）
-外全部完成。
+仍未完成：
+
+- 第 8 条里的 `additionalProperties: false` 强制（需引入 JSON Schema 校验器）
+- 第 23 条：重命名 GitHub 上已发布的 beta1.6 资产（**需你操作**）
+- 第 22 条的根治：升级 AGP 到 8.13+ 后恢复 lint 门禁

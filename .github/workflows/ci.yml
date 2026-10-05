@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  server:
+    name: Server tests
+    # 服务端是 Windows 专用（ctypes.windll + SendInput），用 Windows 跑更贴近实际
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 分帧与连接生命周期
+        working-directory: server
+        run: python test_tcp_server.py
+
+      - name: 握手、配对令牌与字段校验
+        working-directory: server
+        run: python test_handlers.py
+
+  client:
+    name: Client compile
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # 只编译，不签名也不打包：CI 里没有 keystore.properties
+      - name: 编译 debug
+        working-directory: client
+        run: ./gradlew :app:compileDebugKotlin --console=plain --stacktrace
+
+      - name: 编译 release（不签名）
+        working-directory: client
+        run: ./gradlew :app:compileReleaseKotlin --console=plain --stacktrace

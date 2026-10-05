@@ -11,7 +11,7 @@ import logging
 
 import pairing
 from input_controller import move_mouse, click_mouse, scroll, send_text, press_key
-from protocol import handler, send_json, send_error
+from protocol import InvalidParams, handler, send_json, send_error
 
 logger = logging.getLogger("OmniPad")
 
@@ -39,6 +39,25 @@ def _fail(conn, code, message):
     """回报错误并保持连接（返回 True 让调用方直接 return）。"""
     send_error(conn, code, message)
     return True
+
+
+def _int_field(msg, key, default=None):
+    """取出一个必须是整数的字段。
+
+    bool 虽然是 int 的子类，但把 True 当位移传进来显然是客户端出错，一并拒绝。
+    """
+    value = msg.get(key, default)
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise InvalidParams(f"{key} must be an integer, got {value!r}")
+    return value
+
+
+def _text_field(msg, key):
+    """取出一个必须是字符串的字段。"""
+    value = msg.get(key)
+    if not isinstance(value, str):
+        raise InvalidParams(f"{key} must be a string, got {value!r}")
+    return value
 
 
 @handler("handshake")
@@ -71,14 +90,14 @@ def on_heartbeat(conn, msg):
 
 @handler("mouse_move")
 def on_mouse_move(conn, msg):
-    move_mouse(msg.get("dx", 0), msg.get("dy", 0))
+    move_mouse(_int_field(msg, "dx", 0), _int_field(msg, "dy", 0))
     return True
 
 
 @handler("mouse_click")
 def on_mouse_click(conn, msg):
-    button = msg.get("button")
-    action = msg.get("action")
+    button = _text_field(msg, "button")
+    action = _text_field(msg, "action")
     if button not in MOUSE_BUTTONS or action not in MOUSE_ACTIONS:
         return _fail(conn, "INVALID_PARAMS", "invalid button or action")
 
@@ -94,13 +113,14 @@ def on_mouse_click(conn, msg):
 
 @handler("scroll")
 def on_scroll(conn, msg):
-    scroll(msg.get("delta", 0) * 120)
+    # delta 是滚轮格数，乘 WHEEL_DELTA 换算成 Windows 的滚轮单位
+    scroll(_int_field(msg, "delta", 0) * 120)
     return True
 
 
 @handler("text_input")
 def on_text_input(conn, msg):
-    text = msg.get("text", "")
+    text = _text_field(msg, "text")
     if not text:
         return _fail(conn, "INVALID_PARAMS", "text is empty")
     # 刻意不记录 text 内容：那等于把用户的键盘输入写进日志。
@@ -111,8 +131,8 @@ def on_text_input(conn, msg):
 
 @handler("keyboard")
 def on_keyboard(conn, msg):
-    key = msg.get("key", "")
-    action = msg.get("action")
+    key = _text_field(msg, "key")
+    action = _text_field(msg, "action")
     if not key or action not in KEY_ACTIONS:
         return _fail(conn, "INVALID_PARAMS", "invalid key or action")
     if not press_key(key, action):

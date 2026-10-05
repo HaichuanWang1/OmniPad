@@ -70,7 +70,9 @@ Server → Client:
 ```
 {"type":"scroll","delta":<int>}
 ```
-`delta`：> 0 向上滚动，< 0 向下滚动。
+`delta`：滚轮**格数**，> 0 向上滚动，< 0 向下滚动。
+Server 收到后乘以 `WHEEL_DELTA`（120）换算成 Windows 的滚轮单位，
+所以这里传的是「格」而不是原始增量。
 
 ---
 
@@ -96,11 +98,19 @@ Server 端使用 `SendInput` + `KEYEVENTF_UNICODE` 逐个字符注入。
 {"type":"keyboard","key":"<key_name>","action":"<action>"}
 ```
 - `key`：使用 Windows 虚拟键码（VK）的字符串名称。仅用于特殊按键，**常规文字输入请使用 `text_input`**。
-  常用值：
-  - 功能键：`"enter"`, `"tab"`, `"escape"`, `"backspace"`, `"space"`
-  - 修饰键：`"shift"`, `"ctrl"`, `"alt"`, `"win"`
-  - 方向键：`"up"`, `"down"`, `"left"`, `"right"`
-  - F 键：`"f1"` ~ `"f24"`
+  Server 端认可以下名称（与 `server/input_controller.py` 的 `VK_MAP` 保持一致）：
+
+  | 分类 | 取值 |
+  |------|------|
+  | 功能键 | `enter` `tab` `escape` `backspace` `space` |
+  | 修饰键 | `shift` `ctrl` `alt` `win` |
+  | 方向键 | `up` `down` `left` `right` |
+  | 编辑键 | `insert` `delete` `home` `end` `page_up` `page_down` |
+  | 锁定/系统键 | `caps_lock` `num_lock` `scroll_lock` `pause` `print_screen` |
+  | F 键 | `f1` ~ `f24` |
+  | 单字符 | 任意单个字符，如 `"a"` `"1"`（按大写形式的码位取 VK，大小写不敏感） |
+
+  名称大小写不敏感。无法识别的名称会返回 `INVALID_PARAMS`。
 - `action`：`"down"` | `"up"` | `"press"`（按下后立即释放）
 
 组合键示例（由 Client 拆分为多条消息发送）：

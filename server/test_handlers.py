@@ -13,6 +13,7 @@ import unittest
 
 import handlers
 import pairing
+import protocol
 import tcp_server
 
 
@@ -211,6 +212,96 @@ class PairingIntegrationTest(unittest.TestCase):
                 self.assertEqual(sock.recv(4096), b"")
             except socket.timeout:
                 self.fail("AUTH_FAILED 后服务端未关闭连接")
+
+
+class MessageValidationTest(unittest.TestCase):
+    """字段校验：非法类型应回 INVALID_PARAMS，而不是让 ctypes 抛异常。
+
+    注意：本组把注入函数全部换成空实现 —— 否则测试会真的移动你的鼠标、
+    敲你的键盘。
+    """
+
+    def setUp(self):
+        self.conn = FakeConn()
+        self.calls = []
+        self._orig_token = handlers.get_pairing_token()
+        handlers.set_pairing_token(None)   # 本组只关心字段校验
+
+        self._orig_io = (
+            handlers.move_mouse, handlers.click_mouse, handlers.scroll,
+            handlers.send_text, handlers.press_key,
+        )
+        handlers.move_mouse = lambda dx, dy: self.calls.append(("move", dx, dy))
+        handlers.click_mouse = lambda button, action: (
+            self.calls.append(("click", button, action)) or True
+        )
+        handlers.scroll = lambda delta: self.calls.append(("scroll", delta))
+        handlers.send_text = lambda text: self.calls.append(("text", text)) or True
+        handlers.press_key = lambda key, action: (
+            self.calls.append(("key", key, action)) or True
+        )
+
+    def tearDown(self):
+        (handlers.move_mouse, handlers.click_mouse, handlers.scroll,
+         handlers.send_text, handlers.press_key) = self._orig_io
+        handlers.set_pairing_token(self._orig_token)
+
+    def _dispatch(self, msg):
+        protocol.handle_message(self.conn, msg)
+        return self.conn.sent[-1] if self.conn.sent else None
+
+    def test_unknown_type(self):
+        self.assertEqual(self._dispatch({"type": "nope"})["code"], "UNKNOWN_TYPE")
+
+    def test_mouse_move_accepts_integers(self):
+        self.assertIsNone(
+            self._dispatch({"type": "mouse_move", "dx": 10, "dy": -5})
+        )
+        self.assertEqual(self.calls, [("move", 10, -5)])
+
+    def test_mouse_move_rejects_string(self):
+        resp = self._dispatch({"type": "mouse_move", "dx": "10", "dy": 0})
+        self.assertEqual(resp["code"], "INVALID_PARAMS")
+        self.assertEqual(self.calls, [], "非法消息不应触发注入")
+
+    def test_mouse_move_rejects_bool(self):
+        """True 是 int 的子类，但当成位移显然是客户端出错。"""
+        resp = self._dispatch({"type": "mouse_move", "dx": True, "dy": 0})
+        self.assertEqual(resp["code"], "INVALID_PARAMS")
+        self.assertEqual(self.calls, [])
+
+    def test_scroll_rejects_string(self):
+        resp = self._dispatch({"type": "scroll", "delta": "3"})
+        self.assertEqual(resp["code"], "INVALID_PARAMS")
+        self.assertEqual(self.calls, [])
+
+    def test_scroll_converts_to_wheel_units(self):
+        self._dispatch({"type": "scroll", "delta": 3})
+        self.assertEqual(self.calls, [("scroll", 360)])
+
+    def test_text_input_rejects_non_string(self):
+        resp = self._dispatch({"type": "text_input", "text": 123})
+        self.assertEqual(resp["code"], "INVALID_PARAMS")
+
+    def test_text_input_rejects_empty(self):
+        resp = self._dispatch({"type": "text_input", "text": ""})
+        self.assertEqual(resp["code"], "INVALID_PARAMS")
+
+    def test_keyboard_rejects_non_string_key(self):
+        resp = self._dispatch({"type": "keyboard", "key": 5, "action": "press"})
+        self.assertEqual(resp["code"], "INVALID_PARAMS")
+
+    def test_keyboard_rejects_unknown_key(self):
+        handlers.press_key = lambda key, action: False
+        resp = self._dispatch({"type": "keyboard", "key": "nope", "action": "press"})
+        self.assertEqual(resp["code"], "INVALID_PARAMS")
+
+    def test_mouse_click_rejects_unknown_button(self):
+        resp = self._dispatch(
+            {"type": "mouse_click", "button": "side", "action": "click"}
+        )
+        self.assertEqual(resp["code"], "INVALID_PARAMS")
+        self.assertEqual(self.calls, [])
 
 
 if __name__ == "__main__":

@@ -2,6 +2,15 @@ import json
 
 HANDLER_REGISTRY = {}
 
+
+class InvalidParams(ValueError):
+    """消息字段不符合 docs/protocol.md 的规定。
+
+    处理器抛出它，由 handle_message 统一转成 INVALID_PARAMS 错误响应，
+    这样每个处理器不必各写一遍错误回包。
+    """
+
+
 def handler(msg_type):
     def decorator(fn):
         HANDLER_REGISTRY[msg_type] = fn
@@ -15,7 +24,11 @@ def handle_message(conn, msg):
         return True
 
     handler_fn = HANDLER_REGISTRY[msg_type]
-    return handler_fn(conn, msg)
+    try:
+        return handler_fn(conn, msg)
+    except InvalidParams as e:
+        send_error(conn, "INVALID_PARAMS", str(e))
+        return True
 
 def send_json(conn, data):
     try:
