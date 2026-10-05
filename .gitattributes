@@ -10,3 +10,6 @@ gradlew text eol=lf
 # Windows 批处理与 PowerShell 保持 CRLF
 *.bat text eol=crlf
 *.ps1 text eol=crlf
+
+# 版本号文件被 Gradle 与 PowerShell 同时读取，固定 LF 避免平台间差异
+VERSION text eol=lf

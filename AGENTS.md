@@ -7,10 +7,13 @@ OmniPad/
 ├── AGENTS.md               # 全局规则（本文件）
 ├── README.md               # 使用说明
 ├── CHANGELOG.md            # 版本变更记录
+├── VERSION                 # 版本号唯一来源（Gradle 与打包脚本都读它）
 ├── fix.md                  # 待办修复清单
 ├── docs/                   # 共享协议文档（唯一接口标准）
 │   ├── protocol.md
 │   └── schema.json
+├── scripts/
+│   └── package.ps1         # 打包发布产物到 dist/
 ├── server/                 # Python 电脑端（TCP 服务端）
 │   ├── server.py           # 无头模式入口
 │   ├── server_ui.py        # Tkinter GUI 入口
@@ -24,6 +27,7 @@ OmniPad/
 │   ├── test_tcp_server.py  # 分帧与连接生命周期测试
 │   └── requirements.txt
 ├── client/                 # Kotlin 手机端（TCP 客户端）
+│   └── app/src/test/       # JVM 单元测试（协议编解码、连接层）
 └── dist/                   # 发布产物（不入库，由 GitHub Release 分发）
 ```
 
@@ -63,6 +67,12 @@ OmniPad/
   - 客户端 `OmniPad-v<版本>.apk`
   - 服务端 `omnipad-server-v<版本>.zip`
 - 不要直接上传 Gradle 原始输出名（如 `app-release.apk`）
+- **必须用 `scripts/package.ps1` 产出资产**，不要手工拷贝文件再改名：
+  历史上手工打包把 `test_client.py` 和 0 字节的 `__init__.py` 混进了每个发布包，
+  beta1.6 还上架了 Gradle 原始输出名
+- 版本号只在仓库根目录 `VERSION` 里改一处，Gradle 与打包脚本都会跟着走
+- 服务端发布包内容由 `scripts/package.ps1` 的白名单决定；新增运行时模块
+  必须同步加进该白名单，否则脚本会拒绝打包
 - 提交信息使用约定式提交：`fix(server):` / `fix(client):` / `docs:` / `chore:`
 
 ## 其他约束
