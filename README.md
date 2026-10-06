@@ -222,7 +222,7 @@ python server.py --stop       # 停掉正在运行的实例
 ```bash
 cd server
 python test_state.py        # 连接状态机与状态快照（36）
-python test_qr.py           # 二维码载荷契约与编码器（46）
+python test_qr.py           # 二维码载荷契约与编码器（47）
 python test_runtime.py      # 数据目录、单实例、原子写、日志（44）
 python test_control.py      # 本机控制通道（25）
 python test_tcp_server.py   # 分帧、连接生命周期与断开原因（22）

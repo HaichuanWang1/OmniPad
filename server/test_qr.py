@@ -53,6 +53,50 @@ def fixture_png():
     return qr.png_bytes(code.modules, scale=8)
 
 
+def decode_png(png):
+    """解出 `qr.png_bytes` 那种 PNG 的像素，返回 `(width, height, RGB 字节)`。
+
+    只认我们自己的产出：8 位真彩色、每行 filter 一律 0。
+
+    **为什么要解像素而不是比字节**：`zlib.compress` 的输出跟 zlib 的实现有关 ——
+    本机的 Python 3.14 自带 zlib-ng（`1.3.1.zlib-ng`），CI 的 3.11 是标准 zlib
+    （`1.2.12`），同一份像素压出来的 IDAT 不一样。这条用例要守的是「提交进仓库的
+    那张图就是编码器画的那张」，不是「压缩器实现没换过」。
+    这个坑是 CI 抓到的：本地绿、CI 红。
+    """
+    import struct
+    import zlib
+
+    if png[:8] != b"\x89PNG\r\n\x1a\n":
+        raise ValueError("不是 PNG")
+    offset = 8
+    width = height = color_type = None
+    idat = bytearray()
+    while offset + 8 <= len(png):
+        length = struct.unpack(">I", png[offset:offset + 4])[0]
+        tag = png[offset + 4:offset + 8]
+        body = png[offset + 8:offset + 8 + length]
+        if tag == b"IHDR":
+            width, height, depth, color_type = struct.unpack(">IIBB", body[:10])
+            if depth != 8 or color_type != 2:
+                raise ValueError(f"只支持 8 位真彩色，实际 depth={depth} type={color_type}")
+        elif tag == b"IDAT":
+            idat += body
+        elif tag == b"IEND":
+            break
+        offset += 12 + length
+
+    raw = zlib.decompress(bytes(idat))
+    row_bytes = width * 3 + 1
+    pixels = bytearray()
+    for y in range(height):
+        start = y * row_bytes
+        if raw[start] != 0:
+            raise ValueError(f"第 {y} 行的 filter 不是 0")
+        pixels += raw[start + 1:start + row_bytes]
+    return width, height, bytes(pixels)
+
+
 # --------------------------------------------------------------------------
 # 载荷：构造
 # --------------------------------------------------------------------------
@@ -399,13 +443,30 @@ class FixtureTest(unittest.TestCase):
     def test_fixture_matches_current_encoder(self):
         with open(FIXTURE_PATH, "rb") as f:
             committed = f.read()
-        if committed != fixture_png():
+
+        expected_width, expected_height, expected_pixels = decode_png(fixture_png())
+        width, height, pixels = decode_png(committed)
+
+        if (width, height, pixels) != (expected_width, expected_height, expected_pixels):
             self.fail(
-                "pairing-qr-v1.png 与当前编码器的输出不一致。\n"
+                "pairing-qr-v1.png 与当前编码器画出来的图不一致"
+                f"（提交的是 {width}x{height}，编码器给的是 "
+                f"{expected_width}x{expected_height}）。\n"
                 "如果这是有意的（改了编码器或协议版本），重新生成：\n"
                 "    cd server && python test_qr.py --write-fixture\n"
                 "然后跑一遍客户端测试确认 ZXing 仍能解码。"
             )
+
+    def test_fixture_is_a_well_formed_png(self):
+        with open(FIXTURE_PATH, "rb") as f:
+            committed = f.read()
+        self.assertEqual(committed[:8], b"\x89PNG\r\n\x1a\n")
+        width, height, pixels = decode_png(committed)
+        self.assertEqual(width, height, "二维码图应该是正方形")
+        self.assertEqual(len(pixels), width * height * 3)
+        # 白底 + 黑码点，两种颜色都不该缺
+        self.assertIn(0x00, pixels)
+        self.assertIn(0xFF, pixels)
 
     def test_fixture_payload_parses_back(self):
         parsed = qr.parse_payload(fixture_payload(), expected_version=protocol_version())
@@ -422,7 +483,6 @@ def write_fixture():
     print(f"已写入 {FIXTURE_PATH}")
     print(f"载荷：{fixture_payload()}")
     return 0
-
 
 if __name__ == "__main__":
     if "--write-fixture" in sys.argv:

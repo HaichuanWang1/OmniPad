@@ -923,7 +923,7 @@ UnicodeEncodeError: 'charmap' codec can't encode characters in position 0-6
 二维码不像协议字段，错了不会报错 —— 它只会**扫不出来**。所以这里的正确性
 不靠「我读懂了规范」，靠三条互相独立的验证：
 
-- [x] 服务端 `test_qr.py` 断言入库的 `pairing-qr-v1.png` 与当前编码器逐字节一致
+- [x] 服务端 `test_qr.py` 断言入库的 `pairing-qr-v1.png` 与当前编码器**逐格一致**
       （编码器一改就红，逼你重新生成并复验）
 - [x] 客户端 `PairingQrTest` 用 **ZXing** 把那张 PNG 解码回来。ZXing 是纯 Java，
       能在普通 JVM 单测里跑 —— 这也是选它而不是 ML Kit 的原因之一
@@ -931,6 +931,9 @@ UnicodeEncodeError: 'charmap' codec can't encode characters in position 0-6
       全部解回原文（`sweep.py` 那套办法）
 - [x] 过程中真的抓到一个：定位图形画在定时图形**之前**，定时图形把定位图形的边缘
       啃掉，56 个样本**全解不出来**。顺序反过来就好了
+- [x] 第一条最初比的是**字节**，本地绿、CI 红：`zlib.compress` 的输出跟 zlib 实现
+      有关（本机 Python 3.14 是 zlib-ng，CI 的 3.11 是标准 zlib）。改成比像素后两边
+      都稳，并用 `py -3.11` 在本地复现了 CI 的环境
 
 ### 🟠 63. 相机帧是横躺的
 
@@ -973,7 +976,7 @@ UnicodeEncodeError: 'charmap' codec can't encode characters in position 0-6
 
 | 项 | 结果 |
 |---|---|
-| 服务端测试 | **325 个全过**（第五轮新增 62：`qr` 46 + `server_ui` 9 + `integration` 5 + `state` 2） |
+| 服务端测试 | **326 个全过**（第五轮新增 63：`qr` 47 + `server_ui` 9 + `integration` 5 + `state` 2）。本地另用 CI 的 Python 3.11 全跑一遍 |
 | 客户端测试 | **111 个全过**（新增 32：`PairingQr` 23 + `QrLuminance` 9） |
 | 二维码编码器 | 56 个样本（版本 1–39 × L/M/Q/H × 中英文/emoji/1200B）全部被 ZXing 解回原文 |
 | 端到端 | 起真进程：`qr_payload` 解析回来 → 用载荷里的地址/端口/令牌**真的握手成功** |
