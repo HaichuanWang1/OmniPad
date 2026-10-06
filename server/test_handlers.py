@@ -544,17 +544,29 @@ class ProtocolVersionConformanceTest(unittest.TestCase):
             "docs/schema.json 的 description 里没有当前协议版本号",
         )
 
-    def test_client_handshake_default_matches(self):
+    def test_client_protocol_version_matches(self):
+        """客户端那边的版本号。
+
+        它住在 `Protocol.kt` 的 `PROTOCOL_VERSION` 常量里，`Handshake` 的默认值引用它
+        （原先版本号直接写在 Handshake 的构造参数上，扫码解析也要用同一个数字，
+        于是提成了常量）。这里两件事都要盯住：常量本身的值，以及 Handshake 确实
+        引用的是常量 —— 否则将来又会变成「两处各写一遍」。
+        """
         text = self._read(
             "client", "app", "src", "main", "java", "com", "omnipad", "client",
             "network", "Protocol.kt",
         )
-        m = re.search(r'data class Handshake\(val version: String = "(\d+\.\d+)"', text)
-        self.assertIsNotNone(m, "Protocol.kt 里找不到 Handshake 的默认版本号")
+        m = re.search(r'const val PROTOCOL_VERSION = "(\d+\.\d+)"', text)
+        self.assertIsNotNone(m, "Protocol.kt 里找不到 PROTOCOL_VERSION 常量")
         self.assertEqual(
             m.group(1),
             handlers.PROTOCOL_VERSION,
-            "客户端握手版本与服务端 PROTOCOL_VERSION 不一致",
+            "客户端 PROTOCOL_VERSION 与服务端 PROTOCOL_VERSION 不一致",
+        )
+        self.assertIn(
+            "val version: String = PROTOCOL_VERSION",
+            text,
+            "Handshake 的默认版本必须引用 PROTOCOL_VERSION，不能再写一遍字面量",
         )
 
 

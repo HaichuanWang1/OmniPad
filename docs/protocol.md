@@ -31,7 +31,7 @@ OmniPad 使用 **TCP + JSON Lines** 协议进行通信。每条消息为单行 U
 | 位置 | 形态 |
 |---|---|
 | `server/handlers.py` | `PROTOCOL_VERSION` |
-| `client/app/src/main/java/com/omnipad/client/network/Protocol.kt` | `Handshake.version` 的默认值 |
+| `client/app/src/main/java/com/omnipad/client/network/Protocol.kt` | `PROTOCOL_VERSION` 常量（`Handshake.version` 与二维码解析都引用它） |
 | 本文档标题与 `docs/schema.json` 的 `description` | 文字 |
 
 三处的一致性由 `server/test_handlers.py` 的 `ProtocolVersionConformanceTest` 自动校验 ——
