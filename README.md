@@ -14,7 +14,8 @@
 1. 从 [Releases](https://github.com/HaichuanWang1/OmniPad/releases) 下载最新的
    `omnipad-server-v*.zip` 并解压
 2. **双击 `OmniPad-Server.exe`** —— 不需要安装 Python，也不需要命令行
-3. 记下窗口顶部显示的 **IP 地址**（如 `192.168.x.x`）和 **配对令牌**（8 位，如 `GBGUAWW9`）
+3. 窗口顶部会显示一张**连接二维码**，下面写着它对应的地址与令牌；
+   手动配对的话记下那两样（如 `192.168.x.x` 和 `GBGUAWW9`）
 
 > 首次运行 Windows 可能弹出 SmartScreen 提示（本程序没有做代码签名），
 > 点「更多信息 → 仍要运行」即可。
@@ -36,13 +37,19 @@
 ### 手机端（Android）
 
 1. 从 Releases 下载对应版本的 `OmniPad-v*.apk` 并安装
-2. 打开 App，填入电脑上显示的 IP 地址
-3. 填入电脑上显示的配对令牌
-4. 点击「连接」
+2. **点「扫码连接」，把镜头对准电脑上那张二维码** —— 地址、端口、令牌一次填好并直接连接
+3. 不方便扫码时也可以手动填：电脑上显示的 IP 地址 → 配对令牌 → 点「连接」
+
+> 扫码面板是从底部弹出的半屏窗口，不是另一个页面：扫完就回到连接页，
+> 三个输入框里已经填好了扫到的内容，和手输的结果完全一样。
+>
+> 二维码里带着**明文配对令牌**，所以它和令牌一样是秘密 —— 不要截图发到群里。
+> 扫码时如果提示「二维码来自 vX 的服务端」，那是两端协议版本不一致，
+> 更新 App 即可（这个问题过去会一路走到握手才失败，用户看到的是「配对失败」）。
 
 > 配对令牌在电脑端首次启动时随机生成，保存在数据目录里
 > （exe 是 `%APPDATA%\OmniPad\pairing_token.txt`，源码运行是 `server/pairing_token.txt`）。
-> 删除该文件即可重新生成（手机端需重新配对）。
+> 删除该文件即可重新生成（手机端需重新配对）。重新生成后二维码会立刻跟着换。
 
 ### 使用
 
@@ -112,6 +119,7 @@ OmniPad/
 ├── docs/                    # 协议文档（唯一接口标准）
 │   ├── protocol.md          # 手机 ↔ 电脑的通信协议
 │   ├── schema.json          # 协议消息的 JSON Schema
+│   ├── qr-payload.md        # 连接二维码的载荷格式（扫码配对，非 TCP）
 │   └── server-cli.md        # 服务端命令行、状态文件与控制通道
 ├── scripts/
 │   ├── package.ps1          # 打包发布产物到 dist/
@@ -126,6 +134,7 @@ OmniPad/
 │   ├── control.py           # 本机控制通道（--status / --stop 靠它）
 │   ├── handlers.py          # 协议处理器（两个入口共用，唯一一份）
 │   ├── pairing.py           # 配对令牌的生成与持久化
+│   ├── qr.py                # 连接二维码：载荷 + 纯标准库 QR 编码器
 │   ├── protocol.py          # 消息分派框架
 │   ├── tcp_server.py        # 多线程 TCP 服务器
 │   ├── input_controller.py  # Windows SendInput 注入
@@ -142,15 +151,17 @@ OmniPad/
             │   ├── data/             # SettingsStore（持久化设置）
             │   ├── network/          # Protocol · OmniPadConnection
             │   │                     # EndpointValidator（连接参数校验）· RecentHostsStore
+            │   │                     # PairingQr（二维码载荷解析）
             │   └── ui/
             │       ├── OmniPadApp.kt     # 顶层装配与会话状态机
-            │       ├── NoticeText.kt     # 连接事件 → 用户可读文案
+            │       ├── NoticeText.kt     # 连接事件 / 二维码错误 → 用户可读文案
             │       ├── theme/            # Material 3 主题（品牌蓝，深浅双方案）
-            │       ├── components/       # 按键、状态胶囊等复用组件
+            │       ├── components/       # 按键、状态胶囊、提示卡片等复用组件
             │       ├── input/            # TextInputTracker（实时键盘差分）
+            │       ├── scan/             # 相机帧摆正 + ZXing 解码
             │       ├── util/             # 触觉反馈、相对时间
-            │       └── screens/          # 连接页 · 触控板 · 控制面板 · 设置
-            └── test/            # JVM 单元测试（79 个用例）
+            │       └── screens/          # 连接页 · 扫码面板 · 触控板 · 控制面板 · 设置
+            └── test/            # JVM 单元测试（111 个用例）
 ```
 
 ## 主题
@@ -161,8 +172,9 @@ OmniPad/
 
 ## 协议
 
-详见 [docs/protocol.md](docs/protocol.md)。服务端的命令行、状态文件与控制通道
-见 [docs/server-cli.md](docs/server-cli.md)。
+详见 [docs/protocol.md](docs/protocol.md)。连接二维码（扫码配对）的载荷格式
+见 [docs/qr-payload.md](docs/qr-payload.md) —— 它不经过 TCP，所以单独成文。
+服务端的命令行、状态文件与控制通道见 [docs/server-cli.md](docs/server-cli.md)。
 
 ### 消息类型
 
@@ -198,21 +210,26 @@ python server.py --stop       # 停掉正在运行的实例
 ```
 
 图形界面里还能看到：连接状态（在线 / 已连接·未配对 / 已拒绝并给出原因 / 已断开
-并给出原因）、端口占用者、本机全部地址、日志文件位置，以及一个「自检」面板。
+并给出原因）、**连接二维码**（可切换写进二维码的网卡地址、放大、另存图片）、
+端口占用者、本机全部地址、日志文件位置，以及一个「自检」面板。
 关窗口时会问「最小化到托盘继续运行 / 停止并退出」。
+
+无头模式会把二维码直接画在终端里（半块字符），并另存一份
+`pairing_qr.png` 到数据目录。
 
 ### 运行测试
 
 ```bash
 cd server
-python test_state.py        # 连接状态机与状态快照（34）
+python test_state.py        # 连接状态机与状态快照（36）
+python test_qr.py           # 二维码载荷契约与编码器（46）
 python test_runtime.py      # 数据目录、单实例、原子写、日志（44）
 python test_control.py      # 本机控制通道（25）
 python test_tcp_server.py   # 分帧、连接生命周期与断开原因（22）
 python test_handlers.py     # 握手、配对令牌、字段校验（46）
 python test_tray.py         # 托盘图标的 Win32 结构体与图标文件（23）
-python test_server_ui.py    # 界面纯逻辑（36）
-python test_integration.py  # 端到端：真进程 + 真 CLI + 真 socket + 构建脚本（33）
+python test_server_ui.py    # 界面纯逻辑（45）
+python test_integration.py  # 端到端：真进程 + 真 CLI + 真 socket + 构建脚本（38）
 ```
 
 全部只依赖标准库。`test_integration.py` 会真的起 `server.py` 子进程，用真实
@@ -275,7 +292,9 @@ exe 才是普通用户实际拿到的东西，把它排除在默认路径之外�
 - 服务端 ctypes 直接注入，无额外进程开销
 - 出站消息经单一写协程串行发送，保证组合键与移动序列的顺序
 - release 开启 R8 压缩与资源收缩，APK 从 5.06 MB 降到 1.22 MB（缩减 76%）；
-  `proguard-rules.pro` 只补了崩溃堆栈可读性，未加 keep 规则（客户端无反射查找）
+  引入 CameraX 与 ZXing（扫码）后为 **2.02 MB** —— 换成 ML Kit 的条码包要多约 3 MB，
+  而且它依赖 Google 服务、没法在 JVM 单测里跑
+- `proguard-rules.pro` 只补了崩溃堆栈可读性，未加 keep 规则（客户端无反射查找）
 - 真机实测冷启动 1.29 s（Android 11 / OPPO PCHM10）
 
 ## 许可证
