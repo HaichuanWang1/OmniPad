@@ -84,6 +84,13 @@ Server → Client:
 {"type":"error","code":"AUTH_FAILED","message":"invalid pairing token"}
 ```
 
+### 扫码配对（旁路，不属于本协议）
+
+地址、端口、令牌可以打包成一张二维码，由服务端显示、客户端扫。
+这条通路**不经过 TCP**，因此载荷格式单独定义在 [qr-payload.md](qr-payload.md)，
+本文档不重复描述。要点只有一条：二维码里带着协议版本，客户端在扫码阶段就能
+发现版本不匹配，不必等到握手才拿到 `VERSION_MISMATCH`。
+
 ---
 
 ## 消息类型

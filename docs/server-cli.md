@@ -110,6 +110,7 @@ exe 之所以不写在自己旁边：它可能被放在 `C:\Program Files\` 这�
 |---|---|
 | `pairing_token.txt` | 配对令牌。删除即可重新生成（手机端需要重新配对） |
 | `server_status.json` | 运行状态快照 |
+| `pairing_qr.png` | 连接二维码。无头模式启动时写一份，图形界面里也可以「保存图片」 |
 | `logs\server.log` | 日志，1 MB × 3 轮转 |
 
 **令牌迁移**：exe 首次启动时，如果数据目录里没有令牌、而 exe 同目录有
@@ -123,7 +124,7 @@ exe 之所以不写在自己旁边：它可能被放在 `C:\Program Files\` 这�
 
 ```json
 {
-  "schema": 1,
+  "schema": 2,
   "pid": 6152,
   "mode": "gui",
   "running": true,
@@ -133,6 +134,7 @@ exe 之所以不写在自己旁边：它可能被放在 `C:\Program Files\` 这�
   "port": 5801,
   "protocol_version": "1.1",
   "token_masked": "DN2E****",
+  "qr_payload": "omnipad://pair?v=1.1&host=192.168.1.5&port=5801&token=DN2E5X7Q&name=DESKTOP-ABC",
   "data_dir": "C:\\Users\\me\\AppData\\Roaming\\OmniPad",
   "log_file": "...\\logs\\server.log",
   "online_count": 1,
@@ -165,8 +167,20 @@ exe 之所以不写在自己旁边：它可能被放在 `C:\Program Files\` 这�
 | `running` | 是否已开始监听 |
 | `port` | **实际**监听的端口。`--port 0` 时这里是被内核分配的真实端口 |
 | `token_masked` | 令牌打码，只留前 4 位。状态文件会被贴进 issue 和聊天窗口 |
+| `qr_payload` | 连接二维码的**完整**载荷，含明文令牌。格式见 [qr-payload.md](qr-payload.md) |
 | `control` | 控制通道地址，见下节 |
 | `clients` | 连接记录，最多 200 条，最新的在后 |
+
+### 关于 `qr_payload` 里的明文令牌
+
+它是这份快照里**唯一**带明文令牌的字段，是有意的：这个字段的用途就是「把地址、
+端口、令牌整条交给手机」，打码等于把功能去掉。暴露面没有变大 ——
+它和同一目录下的 `pairing_token.txt` 是同一份秘密，那个文件本来就是明文。
+
+但 `--status` 的**人读**输出里**不打印**它，只提示去哪儿取。那份输出的既定用途是
+「贴进 issue 或聊天窗口问人」（`token_masked` 的注释里写明了这一点），
+往里塞一行完整令牌会把那个约定悄悄破坏掉。要完整载荷就用 `--status --json`
+或直接读状态文件 —— 那两样都是给脚本用的。
 
 ### 客户端状态
 

@@ -13,6 +13,7 @@ OmniPad/
 ├── docs/                   # 共享协议文档（唯一接口标准）
 │   ├── protocol.md         # 手机 ↔ 电脑的通信协议
 │   ├── schema.json         # 协议消息的 JSON Schema
+│   ├── qr-payload.md       # 连接二维码的载荷格式（扫码配对，非 TCP）
 │   └── server-cli.md       # 服务端命令行、状态文件与控制通道（本机接口，非协议）
 ├── scripts/
 │   ├── package.ps1         # 打包发布产物到 dist/
@@ -27,6 +28,7 @@ OmniPad/
 │   ├── control.py          # 本机控制通道（--status / --stop 靠它）
 │   ├── handlers.py         # 协议处理器（两个入口共用，唯一一份）
 │   ├── pairing.py          # 配对令牌的生成与持久化
+│   ├── qr.py               # 连接二维码：载荷构造/解析 + 纯标准库 QR 编码器
 │   ├── protocol.py         # 消息分派与发送
 │   ├── tcp_server.py       # 多线程 TCP 服务器
 │   ├── input_controller.py # Windows SendInput 注入
@@ -39,9 +41,9 @@ OmniPad/
 │       │   ├── MainActivity.kt   # 只负责主题、系统栏与内容装配
 │       │   ├── MainViewModel.kt  # 全部界面状态（跨旋转存活）
 │       │   ├── data/             # SettingsStore（持久化设置）
-│       │   ├── network/          # 协议、连接层、参数校验、历史记录
-│       │   └── ui/               # 主题 / 组件 / 页面 / 实时键盘 / 工具
-│       └── test/                 # JVM 单元测试（协议、连接层、校验、键盘差分）
+│       │   ├── network/          # 协议、连接层、参数校验、历史记录、二维码载荷
+│       │   └── ui/               # 主题 / 组件 / 页面 / 实时键盘 / 扫码 / 工具
+│       └── test/                 # JVM 单元测试（协议、连接层、校验、键盘差分、二维码）
 └── dist/                   # 发布产物（不入库，由 GitHub Release 分发）
 ```
 
