@@ -117,6 +117,19 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
 
+    // 扫码配对：CameraX 负责取景与取帧，ZXing 负责解二维码。
+    //
+    // 为什么是 ZXing 而不是 ML Kit：ZXing core 是纯 Java、离线、不依赖 Google 服务，
+    // 打包进去约 0.5 MB（ML Kit 的 bundled 条码包约 3 MB）。更关键的是它能在普通
+    // JVM 单元测试里跑 —— 服务端那个自研的纯 Python 二维码编码器就是靠它验证的：
+    // `PairingQrTest` 直接解码服务端生成的 `pairing-qr-v1.png`。
+    val cameraX = "1.3.4"
+    implementation("androidx.camera:camera-core:$cameraX")
+    implementation("androidx.camera:camera-camera2:$cameraX")
+    implementation("androidx.camera:camera-lifecycle:$cameraX")
+    implementation("androidx.camera:camera-view:$cameraX")
+    implementation("com.google.zxing:core:3.5.3")
+
     testImplementation("junit:junit:4.13.2")
     // 单元测试跑在普通 JVM 上，android.jar 里的 org.json 是空壳（调用即抛
     // "not mocked"），所以补一份参考实现。它排在 mockable-android.jar 之前，

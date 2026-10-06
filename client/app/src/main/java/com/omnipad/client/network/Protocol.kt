@@ -19,11 +19,20 @@ private fun jsonMessage(type: String, vararg fields: Pair<String, Any>): String 
 }
 
 /**
+ * 协议版本。三处必须一致：本常量、服务端 `handlers.PROTOCOL_VERSION`、
+ * `docs/protocol.md` 的标题（漂移会被服务端的一致性测试抓住）。
+ */
+const val PROTOCOL_VERSION = "1.1"
+
+/**
  * 握手请求。version 必须与服务端 `handlers.PROTOCOL_VERSION` 一致，
  * 以及 docs/protocol.md 的标题 —— 三处漂移会被
  * `server/test_handlers.py` 的 ProtocolVersionConformanceTest 抓住。
  */
-data class Handshake(val version: String = "1.1", val token: String = "") : OmniPadMessage() {
+data class Handshake(
+    val version: String = PROTOCOL_VERSION,
+    val token: String = "",
+) : OmniPadMessage() {
     override fun toJson() = jsonMessage(
         "handshake",
         "version" to version,

@@ -99,6 +99,7 @@ fun OmniPadApp(viewModel: MainViewModel, modifier: Modifier = Modifier) {
                     failure = failure,
                     recentHosts = recentHosts,
                     initialEndpoint = lastEndpoint,
+                    hapticsEnabled = settings.hapticsEnabled,
                     onConnect = { host, port, token ->
                         viewModel.connect(host, port, token)
                     },

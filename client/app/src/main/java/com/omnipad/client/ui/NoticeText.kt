@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
 import com.omnipad.client.R
 import com.omnipad.client.network.ConnectionNotice
+import com.omnipad.client.network.QrError
 
 /**
  * 一条给用户看的连接问题说明。
@@ -68,4 +69,58 @@ fun noticeShortText(notice: ConnectionNotice): String = when (notice) {
     } ?: stringResource(R.string.error_connect_failed)
 
     ConnectionNotice.HeartbeatTimeout -> stringResource(R.string.error_heartbeat_timeout)
+}
+
+/**
+ * 二维码解析失败 → 给用户看的两行话。
+ *
+ * 分类到这里才变成文字：网络层只产出 [QrError]，文案与语言都在这一层决定。
+ * 「扫到别人的二维码」和「App 太旧」要说完全不同的话，笼统一句「二维码无效」
+ * 等于什么都没说。
+ */
+@Composable
+fun qrErrorText(error: QrError): NoticeText = when (error) {
+    QrError.NotOmniPadLink -> NoticeText(
+        stringResource(R.string.qr_error_not_omnipad),
+        stringResource(R.string.qr_error_not_omnipad_hint),
+    )
+
+    is QrError.MissingField -> NoticeText(
+        stringResource(R.string.qr_error_missing_field),
+        stringResource(R.string.qr_error_missing_field_hint, error.field),
+    )
+
+    is QrError.DuplicateField -> NoticeText(
+        stringResource(R.string.qr_error_duplicate_field, error.field),
+        stringResource(R.string.qr_error_duplicate_field_hint),
+    )
+
+    QrError.BadPort -> NoticeText(
+        stringResource(R.string.qr_error_bad_port),
+        stringResource(R.string.qr_error_bad_port_hint),
+    )
+
+    is QrError.BadHost -> NoticeText(
+        stringResource(R.string.qr_error_bad_host),
+        stringResource(R.string.qr_error_bad_host_hint),
+    )
+
+    QrError.BadToken -> NoticeText(
+        stringResource(R.string.qr_error_bad_token),
+        stringResource(R.string.qr_error_bad_token_hint),
+    )
+
+    is QrError.VersionMismatch -> NoticeText(
+        stringResource(
+            R.string.qr_error_version_mismatch,
+            error.found,
+            error.expected,
+        ),
+        stringResource(R.string.qr_error_version_mismatch_hint),
+    )
+
+    QrError.TooLong -> NoticeText(
+        stringResource(R.string.qr_error_too_long),
+        stringResource(R.string.qr_error_too_long_hint),
+    )
 }

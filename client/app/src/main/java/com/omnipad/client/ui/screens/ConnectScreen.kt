@@ -27,9 +27,9 @@ import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -69,7 +69,10 @@ import com.omnipad.client.network.ConnectionState
 import com.omnipad.client.network.EndpointCheck
 import com.omnipad.client.network.EndpointError
 import com.omnipad.client.network.EndpointValidator
+import com.omnipad.client.network.PROTOCOL_VERSION
+import com.omnipad.client.network.QrPairing
 import com.omnipad.client.network.RecentHost
+import com.omnipad.client.ui.components.NoticeCard
 import com.omnipad.client.ui.noticeText
 import com.omnipad.client.ui.util.RelativeBucket
 import com.omnipad.client.ui.util.RelativeTimeFormatter
@@ -93,6 +96,7 @@ fun ConnectScreen(
     failure: ConnectionNotice?,
     recentHosts: List<RecentHost>,
     initialEndpoint: EndpointSnapshot?,
+    hapticsEnabled: Boolean,
     onConnect: (host: String, port: Int, token: String) -> Unit,
     onCancelReconnect: () -> Unit,
     onDeleteHost: (host: String, port: Int) -> Unit,
@@ -107,6 +111,8 @@ fun ConnectScreen(
     var revealed by rememberSaveable { mutableStateOf(false) }
     var fieldError by remember { mutableStateOf<EndpointError?>(null) }
     var deleteTarget by remember { mutableStateOf<RecentHost?>(null) }
+    var showScanner by remember { mutableStateOf(false) }
+    var scanNotice by remember { mutableStateOf<QrPairing?>(null) }
 
     val focusManager = LocalFocusManager.current
     val clipboard = LocalClipboardManager.current
@@ -127,6 +133,23 @@ fun ConnectScreen(
 
             is EndpointCheck.Invalid -> fieldError = check.error
         }
+    }
+
+    /**
+     * 扫码结果的处理。
+     *
+     * 刻意走「填进输入框 -> 调用同一个 [submit]」这条路，而不是直接连接：
+     * 需求上扫码**等同于手动输入**，那这条等价关系就该由代码结构保证，
+     * 而不是靠两处逻辑碰巧一致。用户也能在框里看见扫到了什么，填错了可以改。
+     */
+    fun applyScan(pairing: QrPairing) {
+        host = pairing.host
+        port = pairing.port.toString()
+        token = pairing.token
+        fieldError = null
+        scanNotice = pairing
+        showScanner = false
+        submit()
     }
 
     val busy = connectionState == ConnectionState.CONNECTING
@@ -176,7 +199,7 @@ fun ConnectScreen(
 
             failure?.let {
                 Spacer(Modifier.height(20.dp))
-                FailureCard(it)
+                NoticeCard(noticeText(it))
             }
 
             Spacer(Modifier.height(26.dp))
@@ -343,6 +366,53 @@ fun ConnectScreen(
                 }
             }
 
+            // 扫码入口紧跟在「连接」下面：两条路通向同一件事，不该隔得很远
+            if (!reconnecting) {
+                Spacer(Modifier.height(10.dp))
+                OutlinedButton(
+                    onClick = {
+                        focusManager.clearFocus()
+                        showScanner = true
+                    },
+                    enabled = !busy,
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    shape = MaterialTheme.shapes.medium,
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.QrCodeScanner,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = stringResource(R.string.scan_action),
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                }
+
+                scanNotice?.let { pairing ->
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = pairing.name?.let { name ->
+                            stringResource(
+                                R.string.scan_filled_named,
+                                pairing.host,
+                                pairing.port,
+                                name,
+                            )
+                        } ?: stringResource(
+                            R.string.scan_filled,
+                            pairing.host,
+                            pairing.port,
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
+
             if (recentHosts.isNotEmpty()) {
                 Spacer(Modifier.height(28.dp))
                 Row(
@@ -448,40 +518,20 @@ fun ConnectScreen(
             },
         )
     }
-}
 
-/** 常驻的失败说明卡片。标题给出结论，正文给出下一步该做什么。 */
-@Composable
-private fun FailureCard(failure: ConnectionNotice) {
-    val text = noticeText(failure)
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.errorContainer,
-        contentColor = MaterialTheme.colorScheme.onErrorContainer,
-    ) {
-        Row(
-            modifier = Modifier.padding(14.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Icon(
-                imageVector = Icons.Default.Warning,
-                contentDescription = null,
-                modifier = Modifier.size(20.dp),
-            )
-            Column {
-                Text(
-                    text = text.title,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(text = text.hint, style = MaterialTheme.typography.bodySmall)
-            }
-        }
+    // 扫码面板是**底部弹出的半屏窗口**，不是独立页面：扫码是连接页上的一个动作，
+    // 做成整页会让用户在两个页面之间来回切，而它们讲的是同一件事。
+    if (showScanner) {
+        ScanSheet(
+            expectedVersion = PROTOCOL_VERSION,
+            hapticsEnabled = hapticsEnabled,
+            onScanned = { applyScan(it) },
+            onDismiss = { showScanner = false },
+        )
     }
 }
 
+/** 字段级校验错误的说明，紧贴在对应输入框下面。 */
 @Composable
 private fun FieldErrorText(message: String) {
     Text(
