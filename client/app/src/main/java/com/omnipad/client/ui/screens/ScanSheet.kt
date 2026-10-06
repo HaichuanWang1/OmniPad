@@ -47,10 +47,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
@@ -66,8 +68,21 @@ import com.omnipad.client.ui.util.rememberHaptics
 import kotlinx.coroutines.launch
 import java.util.concurrent.Executors
 
-/** 取景框高度。占屏幕的一小半，加上标题与说明正好是一个「半屏」面板。 */
+/** 取景框的目标高度。实际取值还要看屏幕有多高，见 [previewHeight]。 */
 private val PREVIEW_HEIGHT = 260.dp
+
+/**
+ * 取景框的实际高度。
+ *
+ * 面板是**半屏**弹出的，所以内容不能比半屏还高 —— 小屏手机上（640dp 上下）
+ * 260dp 的预览会把标题和关闭按钮顶出可视区，用户得先把面板拖上去才看得全。
+ * 按屏高的 30% 收一收，两种屏上都正好落在半屏以内。
+ */
+@Composable
+private fun previewHeight(): Dp {
+    val screenHeight = LocalConfiguration.current.screenHeightDp.dp
+    return minOf(PREVIEW_HEIGHT, screenHeight * 0.3f)
+}
 
 /**
  * 扫码面板。
@@ -201,20 +216,21 @@ fun ScanSheet(
                 )
 
                 else -> {
+                    val height = previewHeight()
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(PREVIEW_HEIGHT)
+                            .height(height)
                             .clip(RoundedCornerShape(16.dp))
                             .background(MaterialTheme.colorScheme.surfaceVariant),
                     ) {
                         CameraPreview(
                             onText = { text -> mainHandler.post { accept(text) } },
                             onError = { message -> mainHandler.post { cameraError = message } },
-                            modifier = Modifier.fillMaxWidth().height(PREVIEW_HEIGHT),
+                            modifier = Modifier.fillMaxWidth().height(height),
                         )
                         // 取景框：四个角上的直角标记比整块半透明遮罩更不挡视线
-                        ViewfinderOverlay()
+                        ViewfinderOverlay(height)
                     }
                     Text(
                         text = stringResource(R.string.scan_hint),
@@ -292,9 +308,9 @@ private fun CameraPreview(
 
 /** 取景框四角。用主题色而不是写死的白色，深浅两套主题下都能看清。 */
 @Composable
-private fun ViewfinderOverlay() {
+private fun ViewfinderOverlay(height: Dp) {
     val color = MaterialTheme.colorScheme.primary
-    Box(modifier = Modifier.fillMaxWidth().height(PREVIEW_HEIGHT)) {
+    Box(modifier = Modifier.fillMaxWidth().height(height)) {
         listOf(
             Alignment.TopStart,
             Alignment.TopEnd,
