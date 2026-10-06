@@ -56,6 +56,7 @@ $RuntimeFiles = @(
     'server_ui.py'          # Tkinter GUI 实现
     'handlers.py'           # 协议处理器（两个入口共用）
     'pairing.py'            # 配对令牌
+    'qr.py'                 # 连接二维码（载荷 + 纯标准库 QR 编码器）
     'protocol.py'           # 消息分派
     'state.py'              # 连接状态机与运行状态快照
     'runtime.py'            # 数据目录 / 状态文件 / 单实例 / 日志

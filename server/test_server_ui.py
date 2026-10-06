@@ -20,6 +20,7 @@ from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import qr
 import server_ui
 import state as state_module
 
@@ -208,6 +209,39 @@ class DpiTest(unittest.TestCase):
         server_ui.enable_dpi_awareness()      # 返回值与平台有关，不断言
 
 
+class QrScaleTest(unittest.TestCase):
+    """二维码的放大倍数必须是整数，否则模块宽度不一会糊掉。"""
+
+    def test_never_below_one(self):
+        self.assertEqual(server_ui.qr_scale(200, 10), 1)
+
+    def test_targets_the_requested_pixel_size(self):
+        scale = server_ui.qr_scale(37, server_ui.QR_CARD_PX)
+        rendered = (37 + server_ui.QR_BORDER * 2) * scale
+        self.assertGreaterEqual(rendered, server_ui.QR_CARD_PX * 0.75)
+        self.assertLessEqual(rendered, server_ui.QR_CARD_PX * 1.25)
+
+    def test_degenerate_input(self):
+        # 模块数为 0 不该炸，也不该返回 0（0 倍缩放画不出东西）
+        self.assertGreaterEqual(server_ui.qr_scale(0, 100), 1)
+
+    def test_card_is_light_on_dark(self):
+        """二维码那一块刻意不跟随深色主题：深底浅码很多摄像头认不出来。"""
+        self.assertEqual(server_ui.qr_hex(server_ui.QR_LIGHT), (255, 255, 255))
+        self.assertEqual(server_ui.qr_hex(server_ui.QR_DARK), (0, 0, 0))
+
+    def test_image_is_a_png_at_the_expected_size(self):
+        import struct
+        code = qr.encode_text("omnipad://pair?v=1.1")
+        png = server_ui.qr_image_png(code, server_ui.QR_CARD_PX)
+        self.assertEqual(png[:8], b"\x89PNG\r\n\x1a\n")
+        width, height = struct.unpack(">II", png[16:24])
+        expected = (code.size + server_ui.QR_BORDER * 2) * server_ui.qr_scale(
+            code.size, server_ui.QR_CARD_PX
+        )
+        self.assertEqual((width, height), (expected, expected))
+
+
 @unittest.skipUnless(RUN_GUI, "需要桌面会话；用 OMNIPAD_GUI_TEST=1 打开")
 class LiveGuiTest(unittest.TestCase):
     """真的把窗口搭起来。
@@ -264,6 +298,54 @@ class LiveGuiTest(unittest.TestCase):
         self.app._refresh_header()
         self.app._refresh_clients()
         self.app._refresh_clients()
+
+    def test_qr_widgets_exist(self):
+        for name in ("qr_label", "qr_host_box", "qr_target_label", "qr_token_label"):
+            self.assertTrue(hasattr(self.app, name), f"缺少控件 {name}")
+
+    def test_qr_is_rendered_from_the_state_payload(self):
+        """二维码必须来自 state 里那份载荷。
+
+        界面自己再算一份，就会出现「窗口画的」和「--status 说的」不是同一个端点 ——
+        这正是改造前「界面说在线、实际连握手都没过」的成因。
+        """
+        self.session.state.set_bound_port(5800)
+        self.session.refresh_qr_payload()
+        self.app._refresh_qr()
+
+        self.assertIsNotNone(self.app._qr_photo, "二维码没有画出来")
+        self.assertIn(str(self.session.state.bound_port),
+                      self.app.qr_target_label.cget("text"))
+        self.assertEqual(self.app.qr_host_box.get(), self.session.selected_qr_host())
+
+    def test_qr_card_is_actually_visible(self):
+        """二维码区块不能被挤没 —— 它是这一版的主入口。
+
+        和状态栏那条一样：布局错误在纯逻辑测试里看不出来，只有真的搭一次窗口
+        量一下尺寸才会暴露。
+        """
+        self.session.state.set_bound_port(5800)
+        self.session.refresh_qr_payload()
+        self.app.root.deiconify()
+        self.app._refresh_qr()
+        self.app.root.update()
+
+        self.assertGreater(self.app.qr_label.winfo_width(), 80)
+        self.assertGreater(self.app.qr_label.winfo_height(), 80)
+
+    def test_qr_switching_the_address_redraws_it(self):
+        self.session.state.set_bound_port(5800)
+        self.session.refresh_qr_payload()
+        self.app._refresh_qr()
+        first = self.session.state.qr_payload
+
+        hosts = self.session.qr_hosts()
+        self.app.qr_host_box.set(hosts[-1])
+        self.app._on_qr_host_selected()
+
+        self.assertIn(f"host={hosts[-1]}", self.session.state.qr_payload)
+        if len(hosts) > 1:
+            self.assertNotEqual(first, self.session.state.qr_payload)
 
     def test_hide_to_tray_and_restore(self):
         """「最小化到托盘」必须真的能回来，否则用户就找不回窗口了。"""

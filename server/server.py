@@ -21,6 +21,7 @@ import argparse
 import json
 import os
 import signal
+import socket
 import subprocess
 import sys
 import threading
@@ -29,6 +30,7 @@ import time
 import control
 import handlers
 import pairing
+import qr
 import runtime
 import state as state_module
 from tcp_server import TcpServer
@@ -98,6 +100,9 @@ class ServerSession:
         self.mode = mode
         self.on_event = on_event
         self.logger = None
+        # 写进二维码的那个地址。装了 Tailscale 的机器有多个可用地址，
+        # 手机在局域网里该用局域网地址、在外面该用 Tailscale 地址，所以由用户选。
+        self.qr_address = None
 
         self.state = state_module.ServerState(
             pid=os.getpid(),
@@ -154,6 +159,8 @@ class ServerSession:
 
         self.state.set_bound_port(self.tcp.bound_port)
         self.state.set_running(True)
+        # 二维码要用真实端口（--port 0 时端口是内核给的），所以必须在回填之后生成
+        self.refresh_qr_payload()
         self.persist()
 
         self._heartbeat_thread = threading.Thread(
@@ -246,6 +253,58 @@ class ServerSession:
     def connect_addresses(self):
         return runtime.local_ipv4_addresses()
 
+    # ---- 连接二维码 ----
+
+    def qr_hosts(self):
+        """可以写进二维码的本机地址。一个都没有时退回回环，至少让界面有东西可画。"""
+        return self.connect_addresses() or ["127.0.0.1"]
+
+    def selected_qr_host(self):
+        """当前选中的地址。用户选过的那个已经不在列表里（比如换了网络）就退回第一个。"""
+        hosts = self.qr_hosts()
+        if self.qr_address in hosts:
+            return self.qr_address
+        return hosts[0]
+
+    def set_qr_host(self, host):
+        self.qr_address = host or None
+        return self.refresh_qr_payload()
+
+    def refresh_qr_payload(self):
+        """按当前地址/端口/令牌重建载荷。返回文本，给不出时返回 None。
+
+        载荷由 `qr.build_payload` 唯一一份实现产出，界面与 `--status` 都从这里取，
+        不存在「界面画的和状态文件写的不一样」。
+        """
+        try:
+            payload = qr.build_payload(
+                handlers.PROTOCOL_VERSION,
+                self.selected_qr_host(),
+                self.state.bound_port,
+                self.token,
+                socket.gethostname(),
+            )
+        except qr.PayloadError as error:
+            self._log().warning(f"生成二维码载荷失败：{error}")
+            payload = None
+        self.state.set_qr_payload(payload)
+        return payload
+
+    def qr_code(self):
+        payload = self.state.qr_payload
+        return qr.encode_text(payload) if payload else None
+
+    def write_qr_png(self, path=None):
+        """把二维码写成 PNG（无头模式与「保存图片」按钮共用）。"""
+        code = self.qr_code()
+        if code is None:
+            return None
+        path = path or runtime.qr_file_path(self.data_dir)
+        runtime.ensure_dir(os.path.dirname(os.path.abspath(path)))
+        with open(path, "wb") as f:
+            f.write(qr.png_bytes(code.modules, scale=8))
+        return path
+
     def banner_lines(self):
         addresses = self.connect_addresses() or ["127.0.0.1"]
         lines = [
@@ -256,6 +315,11 @@ class ServerSession:
             lines.append(f"手机连接：{ip}:{self.state.bound_port}")
         lines += [
             f"配对令牌：{self.token}",
+        ]
+        payload = self.state.qr_payload
+        if payload:
+            lines.append(f"扫码载荷：{payload}")
+        lines += [
             f"数据目录：{self.data_dir}",
             f"日志文件：{runtime.log_file_path(self.data_dir)}",
             f"状态文件：{runtime.status_file_path(self.data_dir)}",
@@ -390,6 +454,13 @@ def format_status(payload, live, source, error=None):
     lines.append(f"协议：{payload.get('protocol_version')}"
                  f"　　配对令牌：{payload.get('token_masked')}")
 
+    # 二维码载荷里是**明文令牌**，所以刻意不在这里打印。
+    # 这份输出的既定用途是「贴进 issue / 聊天窗口问人」，mask_token 的注释里
+    # 写明了这一点；往里面塞一行完整令牌会把那个约定悄悄破坏掉。
+    # 要完整载荷就走 `--status --json`（或者读状态文件），那是给脚本用的。
+    if payload.get("qr_payload"):
+        lines.append("扫码载荷：见 --status --json 或状态文件（含明文令牌，故意不在此打印）")
+
     started = payload.get("started_at")
     if started and live:
         lines.append(f"启动于：{started}")
@@ -453,6 +524,7 @@ def run_headless(session, logger):
     session.start()
     for line in session.banner_lines():
         logger.info(line)
+    _print_qr(session, logger)
     logger.info("按 Ctrl+C 停止。")
 
     try:
@@ -461,6 +533,32 @@ def run_headless(session, logger):
     finally:
         session.stop()
     return EXIT_OK
+
+
+def _print_qr(session, logger):
+    """无头模式没有窗口，就把二维码画在终端里，另存一张 PNG 备查。
+
+    这里用 `print` 而不是 logger：二维码是二十来行半块字符，写进日志文件只会把
+    日志淹掉，而它本来就该显示在用户眼前的那个终端里。
+    """
+    code = session.qr_code()
+    if code is None:
+        logger.warning("没有可用的本机地址，跳过二维码显示")
+        return
+
+    path = None
+    try:
+        path = session.write_qr_png()
+    except OSError as error:
+        logger.warning(f"写入二维码图片失败：{error}")
+
+    print()
+    print(qr.ascii_art(code.modules))
+    print()
+    hint = "用手机客户端的「扫码连接」扫上面的二维码即可完成配对"
+    if path:
+        hint += f"（同一张图已存为 {path}）"
+    logger.info(hint)
 
 
 def gui_available() -> bool:

@@ -13,6 +13,7 @@
 """
 from __future__ import annotations
 
+import base64
 import ctypes
 import logging
 import os
@@ -21,8 +22,9 @@ import sys
 import tkinter as tk
 import webbrowser
 from datetime import datetime
-from tkinter import messagebox, ttk
+from tkinter import filedialog, messagebox, ttk
 
+import qr
 import runtime
 import state as state_module
 import tray
@@ -36,6 +38,16 @@ TEXT_DIM = "#8E9099"
 GREEN = "#4ADE80"
 RED = "#FF6B6B"
 YELLOW = "#FFD93D"
+
+# 二维码这一块**刻意不跟随深色主题**：扫描器要的是深色码点 + 浅色底，
+# 深底浅码的码很多摄像头认不出来。所以它是深色界面里唯一一块白底。
+QR_LIGHT = "#FFFFFF"
+QR_DARK = "#000000"
+QR_BORDER = 4
+
+# 卡片里的二维码目标边长，以及「放大」窗口里的边长（像素）
+QR_CARD_PX = 156
+QR_ZOOM_PX = 480
 
 # 状态 → 表格里的颜色。只有 online 是绿的：它代表「这台手机现在真的能控制电脑」。
 STATE_COLORS = {
@@ -62,6 +74,7 @@ TRAY_SHOW = 1
 TRAY_COPY_TOKEN = 2
 TRAY_OPEN_DATA = 3
 TRAY_STOP = 4
+TRAY_COPY_QR = 5
 
 GITHUB_URL = "https://github.com/HaichuanWang1/OmniPad"
 
@@ -203,6 +216,32 @@ def port_owner_text(port) -> str:
     return f"{port}（被 PID {owner} 占用）"
 
 
+def qr_scale(module_count, target_px, border=QR_BORDER) -> int:
+    """模块数 → 放大倍数，让成品尽量接近 target_px，且至少 1 倍。
+
+    放大倍数必须是整数：非整数倍会让模块宽度不一致，二维码看起来像糊了 ——
+    有些扫描器对那种格子很敏感。
+    """
+    total = module_count + border * 2
+    if total <= 0:
+        return 1
+    return max(1, round(target_px / total))
+
+
+def qr_image_png(code, target_px) -> bytes:
+    return qr.png_bytes(
+        code.modules,
+        scale=qr_scale(code.size, target_px),
+        border=QR_BORDER,
+        dark=qr_hex(QR_DARK),
+        light=qr_hex(QR_LIGHT),
+    )
+
+
+def qr_hex(color) -> tuple:
+    return tuple(int(color[i:i + 2], 16) for i in (1, 3, 5))
+
+
 # --------------------------------------------------------------------------
 # 界面
 # --------------------------------------------------------------------------
@@ -218,11 +257,15 @@ class ServerApp:
         self._closing = False
         self._poll_id = None
         self._tick_id = None
+        # 已经画出来的那份载荷。二维码重画要重新生成 PNG，没必要每秒来一次。
+        self._qr_rendered = None
+        self._qr_photo = None
+        self._qr_ticks = 0
 
         self.root = tk.Tk()
         self.root.title("OmniPad 服务端")
-        self.root.geometry("780x680")
-        self.root.minsize(560, 460)
+        self.root.geometry("820x780")
+        self.root.minsize(600, 560)
         self.root.configure(bg=BG)
 
         self._build_ui()
@@ -233,6 +276,7 @@ class ServerApp:
 
     def _build_ui(self):
         self._build_header()
+        self._build_qr()
         self._build_clients()
         # 状态栏必须在日志区**之前**打包。Tk 的 packer 按打包顺序分配空间，
         # 排在最后又被 expand=True 的日志区抢光，结果就是状态栏被裁成一条缝。
@@ -291,6 +335,67 @@ class ServerApp:
                       command=command).pack(side=tk.TOP, fill=tk.X, pady=2)
 
         tk.Frame(self.root, height=1, bg=SURFACE_VARIANT).pack(fill=tk.X)
+
+    def _build_qr(self):
+        """二维码区块。
+
+        为什么值得占掉一块地方：手动配对要在手机上敲地址、端口、8 位令牌，令牌
+        刻意剔除了易混淆字符，看起来就像乱码，错一位得到的还是 `AUTH_FAILED` ——
+        用户以为自己填对了。二维码把这三样一次带过去，顺带带上协议版本，旧版
+        App 在扫码那一刻就能说「请更新」，而不是倒在令牌校验上。
+        """
+        container = tk.Frame(self.root, bg=BG)
+        container.pack(fill=tk.X, padx=18, pady=(12, 0))
+
+        # 白底卡片：扫描器要的是深色码点 + 浅色底
+        card = tk.Frame(container, bg=QR_LIGHT, padx=8, pady=8)
+        card.pack(side=tk.LEFT)
+        self.qr_label = tk.Label(card, bg=QR_LIGHT, bd=0, highlightthickness=0)
+        self.qr_label.pack()
+
+        right = tk.Frame(container, bg=BG, padx=14)
+        right.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        tk.Label(right, text="手机扫码连接", font=("Segoe UI", 11, "bold"),
+                 fg=TEXT, bg=BG, anchor="w").pack(anchor="w")
+
+        self.qr_target_label = tk.Label(right, font=("Consolas", 11, "bold"),
+                                        fg=PRIMARY, bg=BG, anchor="w")
+        self.qr_target_label.pack(anchor="w", pady=(4, 0))
+
+        self.qr_token_label = tk.Label(right, font=("Consolas", 10),
+                                       fg=YELLOW, bg=BG, anchor="w")
+        self.qr_token_label.pack(anchor="w", pady=(2, 0))
+
+        self.qr_hint_label = tk.Label(
+            right,
+            text="二维码里带着地址与令牌，等同于手动输入。它是一份秘密，请不要截图外发。",
+            font=("Segoe UI", 8), fg=TEXT_DIM, bg=BG, anchor="w",
+            wraplength=400, justify="left",
+        )
+        self.qr_hint_label.pack(anchor="w", pady=(6, 0))
+
+        row = tk.Frame(right, bg=BG)
+        row.pack(anchor="w", pady=(8, 0))
+
+        tk.Label(row, text="地址", font=("Segoe UI", 9), fg=TEXT_DIM,
+                 bg=BG).pack(side=tk.LEFT, padx=(0, 6))
+        self.qr_host_box = ttk.Combobox(row, state="readonly", width=20,
+                                        font=("Consolas", 9), style="Dark.TCombobox")
+        self.qr_host_box.pack(side=tk.LEFT)
+        self.qr_host_box.bind("<<ComboboxSelected>>", self._on_qr_host_selected)
+
+        for text, command in (
+            ("复制链接", self._copy_qr),
+            ("保存图片", self._save_qr),
+            ("放大", self._zoom_qr),
+        ):
+            tk.Button(row, text=text, font=("Segoe UI", 9), bg=SURFACE_VARIANT,
+                      fg=TEXT, relief=tk.FLAT, padx=10, pady=2, cursor="hand2",
+                      activebackground=SURFACE, activeforeground=TEXT,
+                      command=command).pack(side=tk.LEFT, padx=(6, 0))
+
+        tk.Frame(self.root, height=1, bg=SURFACE_VARIANT).pack(fill=tk.X, pady=(12, 0))
 
     def _build_clients(self):
         container = tk.Frame(self.root, bg=BG)
@@ -416,6 +521,21 @@ class ServerApp:
         style.map("Dark.Vertical.TScrollbar",
                   background=[("active", PRIMARY), ("pressed", PRIMARY)])
 
+        style.configure("Dark.TCombobox", fieldbackground=SURFACE,
+                        background=SURFACE_VARIANT, foreground=TEXT,
+                        arrowcolor=TEXT_DIM, bordercolor=BG,
+                        lightcolor=SURFACE_VARIANT, darkcolor=SURFACE_VARIANT,
+                        selectbackground=SURFACE_VARIANT, selectforeground=TEXT)
+        style.map("Dark.TCombobox",
+                  fieldbackground=[("readonly", SURFACE)],
+                  foreground=[("readonly", TEXT)],
+                  background=[("active", SURFACE_VARIANT)])
+        # 下拉列表其实是个经典 tk.Listbox，不受 ttk 样式管，只能走 option 数据库
+        self.root.option_add("*TCombobox*Listbox.background", SURFACE)
+        self.root.option_add("*TCombobox*Listbox.foreground", TEXT)
+        self.root.option_add("*TCombobox*Listbox.selectBackground", PRIMARY)
+        self.root.option_add("*TCombobox*Listbox.selectForeground", BG)
+
     # ---- 生命周期 ----
 
     def run(self) -> int:
@@ -432,6 +552,7 @@ class ServerApp:
             return server.EXIT_FAILED
 
         self._refresh_header()
+        self._refresh_qr()
         self.version_label.config(text=f"协议 v{self.session.state.protocol_version}")
         self._start_tray()
         self._poll()
@@ -446,6 +567,7 @@ class ServerApp:
             menu_items=[
                 (TRAY_SHOW, "显示窗口"),
                 (TRAY_COPY_TOKEN, "复制配对令牌"),
+                (TRAY_COPY_QR, "复制扫码链接"),
                 (0, None),
                 (TRAY_OPEN_DATA, "打开数据目录"),
                 (0, None),
@@ -491,6 +613,7 @@ class ServerApp:
         if dirty:
             self._refresh_header()
             self._refresh_clients()
+            self._refresh_qr()
 
     def _drain_logs(self):
         appended = False
@@ -527,6 +650,8 @@ class ServerApp:
             self._show_window()
         elif command == TRAY_COPY_TOKEN:
             self._copy_token(silent=True)
+        elif command == TRAY_COPY_QR:
+            self._copy_qr()
         elif command == TRAY_OPEN_DATA:
             self._open_data_dir()
         elif command == TRAY_STOP:
@@ -546,6 +671,12 @@ class ServerApp:
         if self.tray is not None and self.tray_available:
             self.tray.update_tooltip(tray_tooltip(payload))
         self._refresh_clients()
+        # 地址列表要跟着网卡变化走（插拔网线、Tailscale 上下线），但枚举本机地址
+        # 要碰 socket，没必要每秒来一次 —— 5 秒一次足够跟上。
+        self._qr_ticks += 1
+        if self._qr_ticks >= 5:
+            self._qr_ticks = 0
+            self._refresh_qr()
         self._tick_id = self.root.after(TICK_INTERVAL_MS, self._tick)
 
     def _refresh_header(self):
@@ -563,6 +694,106 @@ class ServerApp:
         self.client_tree.delete(*self.client_tree.get_children())
         for row in client_rows(records):
             self.client_tree.insert("", tk.END, values=row[:5], tags=(row[5],))
+
+    # ---- 二维码 ----
+
+    def _refresh_qr(self):
+        """把当前载荷画出来。载荷没变就什么都不做 —— 重画一次要重新生成 PNG。"""
+        hosts = self.session.qr_hosts()
+        if list(self.qr_host_box["values"]) != hosts:
+            self.qr_host_box["values"] = hosts
+        selected = self.session.selected_qr_host()
+        if self.qr_host_box.get() != selected:
+            self.qr_host_box.set(selected)
+
+        payload = self.session.state.qr_payload
+        if not payload:
+            self.qr_target_label.config(
+                text="等待服务启动" if not self.session.state.running else "没有可用的本机地址"
+            )
+            self.qr_token_label.config(text="")
+            self._set_qr_image(None)
+            self._qr_rendered = None
+            return
+        if payload == self._qr_rendered:
+            return
+
+        code = self.session.qr_code()
+        self._set_qr_image(qr_image_png(code, QR_CARD_PX) if code else None)
+        self._qr_rendered = payload
+        self.qr_target_label.config(text=f"{selected}:{self.session.state.bound_port}")
+        self.qr_token_label.config(text=f"配对令牌 {self.session.token}")
+
+    def _set_qr_image(self, png):
+        if not png:
+            self.qr_label.config(image="")
+            self._qr_photo = None
+            return
+        # PhotoImage 必须留一个强引用：Tk 那边只持弱引用，被回收掉就是一块空白
+        self._qr_photo = tk.PhotoImage(data=base64.b64encode(png).decode("ascii"))
+        self.qr_label.config(image=self._qr_photo)
+
+    def _on_qr_host_selected(self, _event=None):
+        self.session.set_qr_host(self.qr_host_box.get())
+        self._qr_rendered = None
+        self._refresh_qr()
+
+    def _copy_qr(self):
+        payload = self.session.state.qr_payload
+        if not payload:
+            self.qr_hint_label.config(text="现在没有可用的本机地址，无法生成二维码")
+            return
+        self._to_clipboard(payload)
+        self.qr_hint_label.config(text="扫码链接已复制（含配对令牌，请勿外发）")
+
+    def _save_qr(self):
+        code = self.session.qr_code()
+        if code is None:
+            messagebox.showwarning("OmniPad 服务端", "现在没有可用的本机地址，无法生成二维码")
+            return
+        path = filedialog.asksaveasfilename(
+            parent=self.root, title="保存二维码", defaultextension=".png",
+            initialfile="omnipad-qr.png", filetypes=[("PNG 图片", "*.png")],
+        )
+        if not path:
+            return
+        try:
+            with open(path, "wb") as f:
+                f.write(qr_image_png(code, QR_ZOOM_PX))
+        except OSError as error:
+            messagebox.showerror("OmniPad 服务端", f"保存失败：{error}")
+            return
+        self.qr_hint_label.config(text=f"已保存到 {path}")
+
+    def _zoom_qr(self):
+        """放大到另一个窗口 —— 手机离得远时扫卡片里那张小图很吃力。"""
+        code = self.session.qr_code()
+        if code is None:
+            messagebox.showwarning("OmniPad 服务端", "现在没有可用的本机地址，无法生成二维码")
+            return
+
+        window = tk.Toplevel(self.root)
+        window.title("扫码连接")
+        window.configure(bg=BG)
+        window.transient(self.root)
+
+        card = tk.Frame(window, bg=QR_LIGHT, padx=10, pady=10)
+        card.pack(padx=18, pady=(18, 8))
+        photo = tk.PhotoImage(
+            data=base64.b64encode(qr_image_png(code, QR_ZOOM_PX)).decode("ascii")
+        )
+        tk.Label(card, image=photo, bg=QR_LIGHT, bd=0,
+                 highlightthickness=0).pack()
+        # 挂在窗口上而不是局部变量：函数一返回局部引用就没了，Tk 那边只剩空白
+        window.qr_photo = photo
+
+        tk.Label(window, text=self.session.state.qr_payload, font=("Consolas", 8),
+                 fg=TEXT_DIM, bg=BG, wraplength=QR_ZOOM_PX + 40,
+                 justify="left").pack(padx=18)
+        tk.Button(window, text="关闭", font=("Segoe UI", 9), bg=SURFACE_VARIANT, fg=TEXT,
+                  relief=tk.FLAT, padx=18, pady=4, cursor="hand2",
+                  command=window.destroy).pack(pady=14)
+        window.bind("<Escape>", lambda _e: window.destroy())
 
     # ---- 动作 ----
 
@@ -602,7 +833,11 @@ class ServerApp:
         handlers.set_pairing_token(new_token)
         self.session.token = new_token
         self.session.state.token = new_token
+        # 令牌变了，二维码里的令牌也得跟着变 —— 否则用户扫到的还是旧令牌
+        self.session.refresh_qr_payload()
+        self._qr_rendered = None
         self._refresh_header()
+        self._refresh_qr()
         self.hint_label.config(text="已生成新令牌，请在手机上重新配对")
         logging.getLogger("OmniPad").warning("配对令牌已重新生成，手机端需要重新配对")
 
@@ -641,6 +876,15 @@ class ServerApp:
         ]
         addresses = self.session.connect_addresses()
         lines += [f"  {ip}:{port}" for ip in addresses] or ["  没有检测到可用的 IPv4 地址"]
+        qr_payload = payload.get("qr_payload")
+        lines += [
+            "",
+            f"二维码载荷：{qr_payload or '（不可用）'}",
+            f"  二维码里的地址：{self.session.selected_qr_host()}:{port}",
+            f"  二维码图片：{runtime.qr_file_path(data_dir)}"
+            f"（{'存在' if os.path.exists(runtime.qr_file_path(data_dir)) else '未生成'}，"
+            "无头模式启动时会写一份）",
+        ]
         lines += [
             "",
             f"数据目录：{data_dir}",

@@ -26,6 +26,7 @@ APP_DIR_NAME = "OmniPad"
 ENV_DATA_DIR = "OMNIPAD_DATA_DIR"
 
 TOKEN_FILENAME = "pairing_token.txt"
+QR_FILENAME = "pairing_qr.png"
 STATUS_FILENAME = "server_status.json"
 LOG_DIRNAME = "logs"
 LOG_FILENAME = "server.log"
@@ -97,6 +98,10 @@ def status_file_path(data_dir) -> str:
 
 def log_file_path(data_dir) -> str:
     return os.path.join(data_dir, LOG_DIRNAME, LOG_FILENAME)
+
+
+def qr_file_path(data_dir) -> str:
+    return os.path.join(data_dir, QR_FILENAME)
 
 
 def adopt_token(data_dir, candidates):

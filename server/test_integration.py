@@ -27,8 +27,10 @@ SERVER_PY = os.path.join(SERVER_DIR, "server.py")
 sys.path.insert(0, SERVER_DIR)
 
 import control  # noqa: E402
+import qr  # noqa: E402
 import runtime  # noqa: E402
 import server  # noqa: E402
+import state as state_module  # noqa: E402
 
 EXIT_OK = 0
 EXIT_FAILED = 1
@@ -165,13 +167,16 @@ class StatusFileTest(IntegrationTestCase):
     def test_status_file_is_written_with_a_real_port(self):
         payload = self.server.start()
 
-        self.assertEqual(payload["schema"], 1)
+        self.assertEqual(payload["schema"], state_module.STATUS_SCHEMA)
         self.assertEqual(payload["mode"], "headless")
         self.assertTrue(payload["running"])
         self.assertNotEqual(payload["port"], 0, "--port 0 时必须回填真实端口")
         self.assertEqual(payload["protocol_version"], "1.1")
         self.assertEqual(payload["pid"], self.server.process.pid)
-        self.assertNotIn("GBGUAWW9", json.dumps(payload))
+        # 令牌在状态文件里仍然是打码的，明文只出现在二维码载荷那一个字段
+        self.assertEqual(
+            payload["token_masked"], state_module.mask_token(self.server.token())
+        )
 
     def test_status_file_is_refreshed_periodically(self):
         self.server.start()
@@ -200,6 +205,64 @@ class StatusFileTest(IntegrationTestCase):
         self.assertEqual(self.server.token(), token, "重启不该换令牌，否则用户每次都要重新配对")
 
 
+class QrPayloadTest(IntegrationTestCase):
+    """连接二维码的端到端验收：载荷必须指向一个**真的能连上**的端点。
+
+    这是整个扫码功能的核心承诺 —— 「扫到的等同于手动输入」。所以这里不是比对
+    字符串，而是拿载荷里的地址/端口/令牌去真的握一次手。
+    """
+
+    def test_payload_parses_and_points_at_the_live_server(self):
+        payload = self.server.start()
+        parsed = qr.parse_payload(payload["qr_payload"],
+                                  expected_version=payload["protocol_version"])
+
+        self.assertEqual(parsed["port"], payload["port"])
+        self.assertEqual(parsed["token"], self.server.token())
+        self.assertTrue(parsed["host"])
+
+    def test_scanned_endpoint_completes_a_handshake(self):
+        payload = self.server.start()
+        parsed = qr.parse_payload(payload["qr_payload"],
+                                  expected_version=payload["protocol_version"])
+
+        sock = socket.create_connection((parsed["host"], parsed["port"]), timeout=5)
+        sock.settimeout(5)
+        try:
+            sock.sendall(json.dumps({
+                "type": "handshake",
+                "version": payload["protocol_version"],
+                "token": parsed["token"],
+            }).encode("utf-8") + b"\n")
+            answer = read_line(sock)
+        finally:
+            sock.close()
+
+        self.assertIsNotNone(answer)
+        self.assertEqual(answer.get("type"), "handshake_ack")
+
+    def test_payload_uses_the_configured_token(self):
+        """`--token` 指定的令牌必须进二维码，而不是那个自动生成的。
+
+        注意这里不能走 `self.server.token()`：显式给令牌时不会写
+        `pairing_token.txt`（那个文件是「自动生成并记住」用的）。
+        """
+        payload = self.server.start("--token", "ZZZZ9999")
+
+        parsed = qr.parse_payload(payload["qr_payload"],
+                                  expected_version=payload["protocol_version"])
+        self.assertEqual(parsed["token"], "ZZZZ9999")
+        self.assertNotIn("ZZZZ9999", payload["token_masked"])
+
+    def test_headless_writes_the_qr_png(self):
+        payload = self.server.start()
+        path = os.path.join(self.data_dir, runtime.QR_FILENAME)
+        self.assertTrue(os.path.exists(path), "无头模式应当写一份二维码图片")
+        with open(path, "rb") as f:
+            self.assertEqual(f.read(8), b"\x89PNG\r\n\x1a\n")
+        self.assertIn(self.server.token(), payload["qr_payload"])
+
+
 class StatusCommandTest(IntegrationTestCase):
     def test_reports_running_with_a_live_control_channel(self):
         self.server.start()
@@ -224,6 +287,16 @@ class StatusCommandTest(IntegrationTestCase):
         self.assertIn(str(self.server.port()), out)
         self.assertIn(self.server.token()[:4], out)
         self.assertNotIn(self.server.token(), out, "状态输出不该暴露完整令牌")
+        # 二维码载荷里是明文令牌，所以人读输出里连它都不该出现
+        self.assertNotIn("omnipad://", out)
+
+    def test_json_output_carries_the_full_qr_payload(self):
+        """给脚本用的那一路才有完整载荷 —— 它本来就是状态文件的内容。"""
+        self.server.start()
+        code, payload = self.server.status_json()
+
+        self.assertEqual(code, EXIT_OK)
+        self.assertIn(self.server.token(), payload["status"]["qr_payload"])
 
     def test_not_running_when_there_is_no_status_file(self):
         code, payload = self.server.status_json()

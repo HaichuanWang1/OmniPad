@@ -16,7 +16,8 @@ from collections import OrderedDict
 from datetime import datetime
 
 # 状态文件的 schema 版本。字段增删时递增，读取方据此判断能否解析。
-STATUS_SCHEMA = 1
+# 2：新增 qr_payload（连接二维码的文本载荷）。
+STATUS_SCHEMA = 2
 
 # 客户端记录上限。键里含源端口，每次重连都是新键，不设上限会一直增长。
 MAX_CLIENT_HISTORY = 200
@@ -190,6 +191,9 @@ class ServerState:
         self.started_at = now if now is not None else datetime.now()
         self.control_host = None
         self.control_port = None
+        # 连接二维码的文本载荷（含配对令牌）。它由 host/port/token 派生，所以在
+        # 这里存一份而不是让界面各算各的 —— 换地址、重置令牌都只改这一处。
+        self.qr_payload = None
         self.max_history = MAX_CLIENT_HISTORY
         self._clients: "OrderedDict[str, ClientRecord]" = OrderedDict()
 
@@ -208,6 +212,11 @@ class ServerState:
         with self._lock:
             self.control_host = host
             self.control_port = int(port)
+
+    def set_qr_payload(self, text):
+        """更新连接二维码的载荷。传 None 表示「现在给不出二维码」。"""
+        with self._lock:
+            self.qr_payload = text or None
 
     def uptime_seconds(self, now=None):
         with self._lock:
@@ -295,6 +304,10 @@ class ServerState:
                 "port": self.bound_port,
                 "protocol_version": self.protocol_version,
                 "token_masked": mask_token(self.token),
+                # 完整载荷（含令牌）。它与同目录下的 pairing_token.txt 是同一份秘密，
+                # 而且这个字段存在的意义就是「把连接信息整条交出去」，所以不打码。
+                # 详见 docs/server-cli.md 的「状态文件里有什么」。
+                "qr_payload": self.qr_payload,
                 "data_dir": self.data_dir,
                 "log_file": self.log_file,
                 "online_count": sum(

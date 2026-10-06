@@ -28,6 +28,7 @@ jobs:
             'test_tcp_server.py',   # 分帧与连接生命周期
             'test_handlers.py',     # 握手、配对令牌、字段校验
             'test_state.py',        # 连接状态机与状态快照
+            'test_qr.py',           # 二维码载荷契约与编码器
             'test_runtime.py',      # 数据目录、单实例、原子写、日志
             'test_control.py',      # 本机控制通道
             'test_tray.py',         # 托盘图标的 Win32 结构体与图标文件
@@ -63,7 +64,8 @@ jobs:
           if ($leaked) { throw "发布包混入了开发文件：$($leaked -join ', ')" }
 
           $required = @(
-            'server.py', 'server_ui.py', 'handlers.py', 'pairing.py', 'tcp_server.py',
+            'server.py', 'server_ui.py', 'handlers.py', 'pairing.py', 'qr.py',
+            'tcp_server.py',
             'input_controller.py', 'protocol.py', 'state.py', 'runtime.py', 'control.py',
             'tray.py', 'assets/omnipad.ico',
             'OmniPad-Server.exe', 'OmniPad-Server-CLI.exe'

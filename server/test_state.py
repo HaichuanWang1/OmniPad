@@ -211,7 +211,7 @@ class ServerStateTest(unittest.TestCase):
         payload = self.state.snapshot(now=self.t0)
 
         for key in ("schema", "pid", "mode", "running", "started_at", "updated_at",
-                    "host", "port", "protocol_version", "token_masked",
+                    "host", "port", "protocol_version", "token_masked", "qr_payload",
                     "data_dir", "log_file", "online_count", "control", "clients"):
             self.assertIn(key, payload)
 
@@ -222,10 +222,29 @@ class ServerStateTest(unittest.TestCase):
         self.assertEqual(payload["updated_at"], "2026-10-05T12:00:00")
         self.assertEqual(len(payload["clients"]), 1)
 
-    def test_snapshot_never_leaks_the_full_token(self):
+    def test_snapshot_masks_the_token_by_default(self):
         payload = self.state.snapshot()
         self.assertEqual(payload["token_masked"], "GBGU****")
+        self.assertIsNone(payload["qr_payload"])
         self.assertNotIn("GBGUAWW9", str(payload))
+
+    def test_qr_payload_carries_the_token_on_purpose(self):
+        """二维码载荷是唯一带明文令牌的字段。
+
+        它存在的意义就是「把地址、端口、令牌整条交出去」，打码等于把功能去掉。
+        它与同目录下的 pairing_token.txt 是同一份秘密，没有新增暴露面。
+        """
+        self.state.set_qr_payload(
+            "omnipad://pair?v=1.1&host=127.0.0.1&port=5800&token=GBGUAWW9"
+        )
+        payload = self.state.snapshot()
+        self.assertIn("GBGUAWW9", payload["qr_payload"])
+        self.assertEqual(payload["token_masked"], "GBGU****")
+
+    def test_qr_payload_can_be_cleared(self):
+        self.state.set_qr_payload("omnipad://pair?v=1.1")
+        self.state.set_qr_payload(None)
+        self.assertIsNone(self.state.snapshot()["qr_payload"])
 
     def test_uptime(self):
         self.assertEqual(self.state.uptime_seconds(now=self.t0), 0)
